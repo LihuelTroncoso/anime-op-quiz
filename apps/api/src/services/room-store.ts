@@ -2,6 +2,7 @@ import type { QuizOption } from '@anime-op-quiz/shared'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { HttpError } from '../domain/http-error'
+import { resetAllOpeningsAsUnlistened } from './openings-game'
 
 export const ROOM_ID = 'main-room'
 
@@ -188,6 +189,7 @@ const clearAllPlayers = async () => {
     roomState.currentRound.answeredPlayerIds.clear()
     roomState.currentRound.nextRoundWinnerPlayerId = null
   }
+  await resetAllOpeningsAsUnlistened()
   await writePlayers([])
 }
 

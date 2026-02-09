@@ -5,6 +5,7 @@ import { YouTubeOpeningSource } from './youtube-opening-source'
 export interface OpeningSource {
   getAllOpenings: () => Promise<AnimeOpening[]>
   markAsListened: (openingId: string) => Promise<void>
+  resetAllAsUnlistened: () => Promise<void>
 }
 
 class FallbackOpeningSource implements OpeningSource {
@@ -27,6 +28,14 @@ class FallbackOpeningSource implements OpeningSource {
       await this.primarySource.markAsListened(openingId)
     } catch {
       await this.fallbackSource.markAsListened(openingId)
+    }
+  }
+
+  async resetAllAsUnlistened() {
+    try {
+      await this.primarySource.resetAllAsUnlistened()
+    } catch {
+      await this.fallbackSource.resetAllAsUnlistened()
     }
   }
 }

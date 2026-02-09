@@ -37,3 +37,7 @@ export const generateRound = async (): Promise<GeneratedRound> => {
 export const markOpeningListened = async (openingId: string) => {
   await openingSource.markAsListened(openingId)
 }
+
+export const resetAllOpeningsAsUnlistened = async () => {
+  await openingSource.resetAllAsUnlistened()
+}

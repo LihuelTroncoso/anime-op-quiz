@@ -7,4 +7,6 @@ export class MockOpeningSource implements OpeningSource {
   }
 
   async markAsListened(_openingId: string) {}
+
+  async resetAllAsUnlistened() {}
 }

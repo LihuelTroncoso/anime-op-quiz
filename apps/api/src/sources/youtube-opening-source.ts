@@ -191,6 +191,17 @@ export class YouTubeOpeningSource implements OpeningSource {
     }
   }
 
+  async resetAllAsUnlistened() {
+    const rows = await readCache()
+    if (rows.length === 0) {
+      return
+    }
+
+    const nextRows = rows.map((row) => ({ ...row, listened: false }))
+    await writeCache(nextRows)
+    this.memoryCache = rowsToOpenings(nextRows)
+  }
+
   private async fetchAndCacheOpenings() {
     const playlistId = readEnv('YOUTUBE_PLAYLIST_ID')
     const apiKey = readEnv('YOUTUBE_API_KEY')
