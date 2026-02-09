@@ -3,6 +3,7 @@ export interface AnimeOpening {
   animeTitle: string
   openingTitle: string
   audioUrl: string
+  listened: boolean
 }
 
 export interface QuizOption {

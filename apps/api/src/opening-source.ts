@@ -5,12 +5,15 @@ import { mockOpenings } from './mock-openings'
 
 export interface OpeningSource {
   getAllOpenings: () => Promise<AnimeOpening[]>
+  markAsListened: (openingId: string) => Promise<void>
 }
 
 export class MockOpeningSource implements OpeningSource {
   async getAllOpenings() {
     return mockOpenings
   }
+
+  async markAsListened(_openingId: string) {}
 }
 
 interface YouTubePlaylistItemsResponse {
@@ -33,6 +36,7 @@ interface CachedOpeningRow {
   tittle: string
   videoId: string
   animeTitle: string
+  listened: boolean
 }
 
 const readEnv = (key: string) => process.env[key]?.trim()
@@ -43,6 +47,8 @@ const csvPath = () =>
     : resolve(process.cwd(), 'data', 'openings.csv')
 
 const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`
+
+const hasOpeningKeyword = (title: string) => /\b(opening|op)\b/i.test(title)
 
 const parseCsvLine = (line: string) => {
   const fields: string[] = []
@@ -76,12 +82,15 @@ const parseCsvLine = (line: string) => {
 }
 
 const rowsToOpenings = (rows: CachedOpeningRow[]) =>
-  rows.map((row) => ({
-    id: row.id,
-    animeTitle: row.animeTitle,
-    openingTitle: row.tittle,
-    audioUrl: `https://www.youtube.com/embed/${row.videoId}`,
-  }))
+  rows
+    .filter((row) => hasOpeningKeyword(row.tittle))
+    .map((row) => ({
+      id: row.id,
+      animeTitle: row.animeTitle,
+      openingTitle: row.tittle,
+      audioUrl: `https://www.youtube.com/embed/${row.videoId}`,
+      listened: row.listened
+    }))
 
 const readCache = async () => {
   const path = csvPath()
@@ -100,6 +109,7 @@ const readCache = async () => {
   const tittleIndex = headers.indexOf('tittle')
   const videoIdIndex = headers.indexOf('videoId')
   const animeTitleIndex = headers.indexOf('animeTitle')
+  const listenedIndex = headers.indexOf('listened')
 
   if (idIndex < 0 || tittleIndex < 0 || videoIdIndex < 0) {
     throw new Error('Invalid CSV header. Expected id,tittle,videoId.')
@@ -115,6 +125,7 @@ const readCache = async () => {
         animeTitleIndex >= 0 && values[animeTitleIndex]
           ? values[animeTitleIndex]
           : deriveAnimeTitle(values[tittleIndex] ?? '', 'Unknown Channel'),
+      listened: listenedIndex >= 0 ? values[listenedIndex]?.toLowerCase() === 'true' : false,
     }
   })
 }
@@ -123,9 +134,9 @@ const writeCache = async (rows: CachedOpeningRow[]) => {
   const path = csvPath()
   await mkdir(dirname(path), { recursive: true })
 
-  const header = ['id', 'tittle', 'videoId', 'animeTitle'].join(',')
+  const header = ['id', 'tittle', 'videoId', 'animeTitle', 'listened'].join(',')
   const body = rows
-    .map((row) => [row.id, row.tittle, row.videoId, row.animeTitle].map(csvEscape).join(','))
+    .map((row) => [row.id, row.tittle, row.videoId, row.animeTitle, String(row.listened)].map(csvEscape).join(','))
     .join('\n')
 
   await writeFile(path, `${header}\n${body}\n`, 'utf-8')
@@ -171,6 +182,27 @@ export class YouTubeOpeningSource implements OpeningSource {
     return fetched
   }
 
+  async markAsListened(openingId: string) {
+    const rows = await readCache()
+    if (rows.length === 0) {
+      return
+    }
+
+    let changed = false
+    const nextRows = rows.map((row) => {
+      if (row.id !== openingId || row.listened) {
+        return row
+      }
+
+      changed = true
+      return { ...row, listened: true }
+    })
+
+    if (changed) {
+      await writeCache(nextRows)
+    }
+  }
+
   private async fetchAndCacheOpenings() {
     const playlistId = readEnv('YOUTUBE_PLAYLIST_ID')
     const apiKey = readEnv('YOUTUBE_API_KEY')
@@ -213,6 +245,7 @@ export class YouTubeOpeningSource implements OpeningSource {
     const rows: CachedOpeningRow[] = collectedItems
       .map((item) => item.snippet)
       .filter((snippet) => snippet.title !== 'Deleted video' && snippet.title !== 'Private video')
+      .filter((snippet) => hasOpeningKeyword(snippet.title))
       .map((snippet) => {
         const videoId = snippet.resourceId?.videoId
         if (!videoId) {
@@ -226,6 +259,7 @@ export class YouTubeOpeningSource implements OpeningSource {
           tittle: snippet.title,
           videoId,
           animeTitle: deriveAnimeTitle(snippet.title, channel),
+          listened: false,
         }
       })
       .filter((row): row is CachedOpeningRow => row !== null)
@@ -252,6 +286,14 @@ class FallbackOpeningSource implements OpeningSource {
     } catch (error) {
       console.warn('Falling back to mock openings source:', error)
       return this.fallbackSource.getAllOpenings()
+    }
+  }
+
+  async markAsListened(openingId: string) {
+    try {
+      await this.primarySource.markAsListened(openingId)
+    } catch {
+      await this.fallbackSource.markAsListened(openingId)
     }
   }
 }

@@ -158,6 +158,10 @@ function App() {
 
     const hit = selectedTitle === round.correctOpeningTitle
 
+    void fetch(`/api/openings/${round.openingId}/listened`, { method: 'POST' }).catch(() => {
+      // Non-blocking tracking call.
+    })
+
     if (hit) {
       setIsCorrectAnswer(true)
       setIsRoundResolved(true)

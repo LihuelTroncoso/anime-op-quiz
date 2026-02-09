@@ -54,6 +54,14 @@ The frontend requests a random opening from the backend, plays audio from second
 }
 ```
 
+### `POST /api/openings/:id/listened`
+
+Marks a song as listened in the CSV cache.
+
+```json
+{ "ok": true }
+```
+
 ## Setup
 
 ### 1) Install
@@ -97,6 +105,7 @@ On first successful YouTube fetch, backend writes CSV rows with:
 - `tittle`
 - `videoId`
 - `animeTitle`
+- `listened` (`false` by default, set to `true` after an answer)
 
 Note: `tittle` is intentionally kept as the field name to match your requirement.
 

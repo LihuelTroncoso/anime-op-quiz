@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { QuizRound } from '@anime-op-quiz/shared'
 import { openingSource } from './opening-source'
+import { chown } from 'node:fs'
 
 const app = new Hono()
 
@@ -15,7 +16,10 @@ app.get('/api/openings/random', async (c) => {
     return c.json({ error: 'No openings available' }, 404)
   }
 
-  const chosenOpening = pickRandom(openings)
+  let chosenOpening = pickRandom(openings)
+  while(chosenOpening.listened) {
+    chosenOpening = pickRandom(openings)
+  }
   const options = openings
     .map((opening) => ({
       id: opening.id,
@@ -31,6 +35,16 @@ app.get('/api/openings/random', async (c) => {
   }
 
   return c.json(response)
+})
+
+app.post('/api/openings/:id/listened', async (c) => {
+  const id = c.req.param('id')
+  if (!id) {
+    return c.json({ error: 'Missing opening id' }, 400)
+  }
+
+  await openingSource.markAsListened(id)
+  return c.json({ ok: true })
 })
 
 export default {
