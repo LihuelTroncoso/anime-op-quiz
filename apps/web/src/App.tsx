@@ -25,6 +25,8 @@ type ScoreEntry = {
 type RoomStateResponse = {
   round: RoundPayload | null
   hasAnswered: boolean
+  canStartNextRound: boolean
+  nextRoundOwnerName: string | null
   scoreboard: ScoreEntry[]
 }
 
@@ -49,6 +51,8 @@ function App() {
   const [scoreboard, setScoreboard] = useState<ScoreEntry[]>([])
   const [answerInput, setAnswerInput] = useState('')
   const [hasAnswered, setHasAnswered] = useState(false)
+  const [canStartNextRound, setCanStartNextRound] = useState(false)
+  const [nextRoundOwnerName, setNextRoundOwnerName] = useState<string | null>(null)
   const [isCorrectAnswer, setIsCorrectAnswer] = useState<boolean | null>(null)
   const [validationMessage, setValidationMessage] = useState<string | null>(null)
 
@@ -146,6 +150,8 @@ function App() {
 
   const applyRoomState = (state: RoomStateResponse) => {
     setScoreboard(state.scoreboard)
+    setCanStartNextRound(state.canStartNextRound)
+    setNextRoundOwnerName(state.nextRoundOwnerName)
 
     if (!state.round) {
       setRound(null)
@@ -355,6 +361,8 @@ function App() {
       setScoreboard([])
       setPlayerId(null)
       setJoinedName('')
+      setCanStartNextRound(false)
+      setNextRoundOwnerName(null)
       setAnswerInput('')
       setValidationMessage(null)
       setStatus('idle')
@@ -442,7 +450,11 @@ function App() {
             isYouTubeRound ? (
               <>
                 <div className="audio-controls">
-                  <button type="button" onClick={startNextRound} disabled={status === 'loading'}>
+                  <button
+                    type="button"
+                    onClick={startNextRound}
+                    disabled={status === 'loading' || !canStartNextRound}
+                  >
                     {status === 'loading' ? 'Loading...' : 'Next Opening'}
                   </button>
                   {!hasAnswered ? (
@@ -480,7 +492,11 @@ function App() {
             ) : (
               <>
                 <div className="audio-controls">
-                  <button type="button" onClick={startNextRound} disabled={status === 'loading'}>
+                  <button
+                    type="button"
+                    onClick={startNextRound}
+                    disabled={status === 'loading' || !canStartNextRound}
+                  >
                     {status === 'loading' ? 'Loading...' : 'Next Opening'}
                   </button>
                   <button type="button" onClick={() => void toggleNativePlayback()} disabled={status !== 'ready'}>
@@ -516,10 +532,17 @@ function App() {
             )
           ) : (
             <div className="audio-controls">
-              <button type="button" onClick={startNextRound} disabled={status === 'loading'}>
+              <button
+                type="button"
+                onClick={startNextRound}
+                disabled={status === 'loading' || !canStartNextRound}
+              >
                 {status === 'loading' ? 'Loading...' : 'Start First Opening'}
               </button>
             </div>
+          )}
+          {!canStartNextRound && nextRoundOwnerName && (
+            <p className="muted selector-help">{nextRoundOwnerName} can start the next opening.</p>
           )}
         </div>
 

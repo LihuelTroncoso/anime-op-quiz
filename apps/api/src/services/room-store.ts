@@ -19,6 +19,7 @@ type RoomRound = {
   options: QuizOption[]
   correctOpeningTitle: string
   answeredPlayerIds: Set<string>
+  nextRoundWinnerPlayerId: string | null
 }
 
 const roomPassword = process.env.ROOM_PASSWORD?.trim()
@@ -28,10 +29,30 @@ const roomState: {
   players: Map<string, Player>
   currentRound: RoomRound | null
   roundNumber: number
+  nextRoundOwnerPlayerId: string | null
 } = {
   players: new Map(),
   currentRound: null,
   roundNumber: 0,
+  nextRoundOwnerPlayerId: null,
+}
+
+const pickRandom = <T>(items: T[]) => items[Math.floor(Math.random() * items.length)]
+
+const ensureNextRoundOwner = () => {
+  if (roomState.nextRoundOwnerPlayerId && roomState.players.has(roomState.nextRoundOwnerPlayerId)) {
+    return roomState.nextRoundOwnerPlayerId
+  }
+
+  const playerIds = [...roomState.players.keys()]
+  if (playerIds.length === 0) {
+    roomState.nextRoundOwnerPlayerId = null
+    return null
+  }
+
+  const ownerPlayerId = pickRandom(playerIds)
+  roomState.nextRoundOwnerPlayerId = ownerPlayerId
+  return ownerPlayerId
 }
 
 let lastRequestAt = Date.now()
@@ -138,8 +159,10 @@ const upsertPlayer = async (player: Player) => {
 
 const clearAllPlayers = async () => {
   roomState.players.clear()
+  roomState.nextRoundOwnerPlayerId = null
   if (roomState.currentRound) {
     roomState.currentRound.answeredPlayerIds.clear()
+    roomState.currentRound.nextRoundWinnerPlayerId = null
   }
   await writePlayers([])
 }
@@ -213,6 +236,12 @@ export const getRoomState = async (playerId?: string) => {
     throw new HttpError(404, 'Player not found')
   }
 
+  const nextRoundOwnerPlayerId = ensureNextRoundOwner()
+  const scoreboard = await getScoreboard()
+  const nextRoundOwnerName = nextRoundOwnerPlayerId
+    ? (scoreboard.find((entry) => entry.playerId === nextRoundOwnerPlayerId)?.name ?? null)
+    : null
+
   return {
     roomId: ROOM_ID,
     roundNumber: roomState.roundNumber,
@@ -225,18 +254,30 @@ export const getRoomState = async (playerId?: string) => {
       : null,
     hasAnswered:
       Boolean(playerId) && roomState.currentRound ? roomState.currentRound.answeredPlayerIds.has(playerId as string) : false,
-    scoreboard: await getScoreboard(),
+    canStartNextRound: Boolean(playerId) && playerId === nextRoundOwnerPlayerId,
+    nextRoundOwnerName,
+    scoreboard,
   }
 }
 
-export const beginRound = async (playerId: string, round: Omit<RoomRound, 'answeredPlayerIds'>) => {
+export const beginRound = async (playerId: string, round: Omit<RoomRound, 'answeredPlayerIds' | 'nextRoundWinnerPlayerId'>) => {
   if (!(await resolvePlayer(playerId))) {
     throw new HttpError(404, 'Player not found')
+  }
+
+  const nextRoundOwnerPlayerId = ensureNextRoundOwner()
+  if (!nextRoundOwnerPlayerId) {
+    throw new HttpError(409, 'No players available to choose the next opening')
+  }
+
+  if (nextRoundOwnerPlayerId !== playerId) {
+    throw new HttpError(409, 'Only the selected player can start the next opening')
   }
 
   roomState.currentRound = {
     ...round,
     answeredPlayerIds: new Set(),
+    nextRoundWinnerPlayerId: null,
   }
   roomState.roundNumber += 1
 
@@ -277,6 +318,10 @@ export const answerRound = async (playerId: string, answerTitle: string) => {
   if (isCorrect) {
     player.correct += 1
     player.score += 1
+    if (!roomState.currentRound.nextRoundWinnerPlayerId) {
+      roomState.currentRound.nextRoundWinnerPlayerId = playerId
+      roomState.nextRoundOwnerPlayerId = playerId
+    }
   }
 
   await upsertPlayer(player)
@@ -329,5 +374,14 @@ export const leaveRoom = async (playerId: string) => {
 
   if (roomState.currentRound?.answeredPlayerIds.has(playerId)) {
     roomState.currentRound.answeredPlayerIds.delete(playerId)
+  }
+
+  if (roomState.currentRound?.nextRoundWinnerPlayerId === playerId) {
+    roomState.currentRound.nextRoundWinnerPlayerId = null
+  }
+
+  if (roomState.nextRoundOwnerPlayerId === playerId) {
+    roomState.nextRoundOwnerPlayerId = null
+    ensureNextRoundOwner()
   }
 }
