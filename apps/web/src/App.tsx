@@ -53,7 +53,7 @@ function App() {
   const [joinError, setJoinError] = useState<string | null>(null)
 
   const [round, setRound] = useState<RoundPayload | null>(null)
-  const [roundDurationSeconds, setRoundDurationSeconds] = useState<RoundDurationSeconds>(10)
+  const [roundDurationSeconds, setRoundDurationSeconds] = useState<RoundDurationSeconds>(20)
   const [scoreboard, setScoreboard] = useState<ScoreEntry[]>([])
   const [answerInput, setAnswerInput] = useState('')
   const [hasAnswered, setHasAnswered] = useState(false)
@@ -69,6 +69,7 @@ function App() {
   const [youtubeReady, setYoutubeReady] = useState(false)
   const [nativePlaying, setNativePlaying] = useState(false)
   const [nativeVolume, setNativeVolume] = useState(10)
+  const [playStartedAtMs, setPlayStartedAtMs] = useState<number | null>(null)
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   const youtubeFrameRef = useRef<HTMLIFrameElement | null>(null)
@@ -77,8 +78,11 @@ function App() {
   const isCorrect = useMemo(() => isCorrectAnswer, [isCorrectAnswer])
   const isJoined = Boolean(playerId)
   const isYouTubeRound = Boolean(round?.audioUrl.includes('youtube.com/embed/'))
-  const remainingRoundSeconds = round ? Math.max(0, Math.ceil((round.roundEndsAt - nowMs) / 1000)) : 0
-  const isRoundTimeUp = Boolean(round) && remainingRoundSeconds <= 0
+  const roundTotalSeconds = round?.roundDurationSeconds ?? roundDurationSeconds
+  const elapsedRoundSeconds = playStartedAtMs === null ? 0 : Math.floor((nowMs - playStartedAtMs) / 1000)
+  const remainingRoundSeconds = round ? Math.max(0, roundTotalSeconds - elapsedRoundSeconds) : 0
+  const roundProgressPercent = round ? Math.min(100, (remainingRoundSeconds / roundTotalSeconds) * 100) : 0
+  const isRoundTimeUp = Boolean(round) && playStartedAtMs !== null && remainingRoundSeconds <= 0
   const allTitles = useMemo(() => (round ? round.options.map((option) => option.title) : []), [round])
 
   const matchingTitles = useMemo(() => {
@@ -157,6 +161,7 @@ function App() {
     setYoutubePlaying(false)
     setYoutubeReady(false)
     setNativePlaying(false)
+    setPlayStartedAtMs(null)
   }
 
   const applyRoomState = (state: RoomStateResponse) => {
@@ -249,6 +254,7 @@ function App() {
     }
 
     if (!youtubePlaying) {
+      setPlayStartedAtMs((current) => current ?? Date.now())
       applyYouTubeVolume()
       sendYouTubeCommand('playVideo')
       setYoutubePlaying(true)
@@ -270,6 +276,8 @@ function App() {
       setNativePlaying(false)
       return
     }
+
+    setPlayStartedAtMs((current) => current ?? Date.now())
 
     if (element.currentTime < OPENING_START_SECONDS && Number.isFinite(element.duration)) {
       element.currentTime = Math.min(OPENING_START_SECONDS, element.duration)
@@ -384,6 +392,7 @@ function App() {
       setNextRoundOwnerName(null)
       setAnswerInput('')
       setValidationMessage(null)
+      setPlayStartedAtMs(null)
       setStatus('idle')
       setJoinPassword('')
       setJoinError(null)
@@ -414,7 +423,7 @@ function App() {
   }, [isYouTubeRound, nativeVolume, round?.audioUrl])
 
   useEffect(() => {
-    if (!round || roundResolved) {
+    if (!round || roundResolved || playStartedAtMs === null) {
       return
     }
 
@@ -423,7 +432,7 @@ function App() {
     }, 1000)
 
     return () => clearInterval(tick)
-  }, [round?.openingId, roundResolved])
+  }, [round?.openingId, roundResolved, playStartedAtMs])
 
   useEffect(() => {
     if (!isRoundTimeUp) {
@@ -482,7 +491,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="quiz-card">
+      <section className="quiz-card battle-card">
         <p className="eyebrow">Anime Opening Quiz</p>
         <h1>Room Battle</h1>
         <p className="muted selector-help">You are playing as `{joinedName}`</p>
@@ -500,9 +509,9 @@ function App() {
                       onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
                       disabled={status === 'loading' || !canStartNextRound}
                     >
-                      <option value="5">5s</option>
-                      <option value="10">10s</option>
-                      <option value="20">20s</option>
+                      <option value="20">20s - Easy</option>
+                      <option value="10">10s - Medium</option>
+                      <option value="5">5s - Hard</option>
                     </select>
                   </label>
                   <button
@@ -557,9 +566,9 @@ function App() {
                       onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
                       disabled={status === 'loading' || !canStartNextRound}
                     >
-                      <option value="5">5s</option>
-                      <option value="10">10s</option>
-                      <option value="20">20s</option>
+                      <option value="20">20s - Easy</option>
+                      <option value="10">10s - Medium</option>
+                      <option value="5">5s - Hard</option>
                     </select>
                   </label>
                   <button
@@ -614,9 +623,9 @@ function App() {
                   onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
                   disabled={status === 'loading' || !canStartNextRound}
                 >
-                  <option value="5">5s</option>
-                  <option value="10">10s</option>
-                  <option value="20">20s</option>
+                  <option value="20">20s - Easy</option>
+                  <option value="10">10s - Medium</option>
+                  <option value="5">5s - Hard</option>
                 </select>
               </label>
               <button
@@ -631,7 +640,20 @@ function App() {
           {!canStartNextRound && nextRoundOwnerName && (
             <p className="muted selector-help">{nextRoundOwnerName} can start the next opening.</p>
           )}
-          {round && !roundResolved && <p className="muted selector-help">Time left: {remainingRoundSeconds}s</p>}
+          {round && !roundResolved && (
+            <div className="round-timer" role="status" aria-live="polite">
+              <div className="round-timer-top">
+                <span>{playStartedAtMs === null ? 'Timer ready' : 'Time left'}</span>
+                <strong>{remainingRoundSeconds}s</strong>
+              </div>
+              <div className="round-timer-track" aria-hidden="true">
+                <span className="round-timer-fill" style={{ width: `${roundProgressPercent}%` }} />
+              </div>
+              {playStartedAtMs === null && (
+                <p className="muted selector-help">Press Play to begin your countdown.</p>
+              )}
+            </div>
+          )}
         </div>
 
         <h2>Answer</h2>
@@ -656,7 +678,7 @@ function App() {
         </div>
 
         {round && !hasAnswered && !roundResolved && !isRoundTimeUp && (
-          <div className="title-matches" role="listbox" aria-label="Matching titles">
+          <div className="title-matches matches-board" role="listbox" aria-label="Matching titles">
             {matchingTitles.map((title) => (
               <button
                 key={title}
@@ -711,7 +733,7 @@ function App() {
             Leave Session
           </button>
         </div>
-        <div className="title-matches" role="table" aria-label="Scoreboard">
+        <div className="title-matches scoreboard-board" role="table" aria-label="Scoreboard">
           {scoreboard.map((entry, index) => (
             <div key={entry.playerId} className="match-item score-row">
               <span>

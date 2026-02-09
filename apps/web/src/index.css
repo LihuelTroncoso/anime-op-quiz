@@ -1,11 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap');
+
 :root {
-  --font-body: 'Trebuchet MS', 'Gill Sans', 'Segoe UI', sans-serif;
-  --font-head: 'Verdana', 'Trebuchet MS', sans-serif;
+  --font-body: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-head: 'Sora', 'Trebuchet MS', sans-serif;
   font-family: var(--font-body);
   line-height: 1.5;
-  font-weight: 400;
-  color: #f4f9fd;
-  background-color: #091623;
+  font-weight: 500;
+  color: #f4fbff;
+  background-color: #051320;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -21,14 +23,27 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 12% 14%, rgba(249, 217, 146, 0.14), transparent 34%),
-    radial-gradient(circle at 88% 72%, rgba(117, 201, 170, 0.18), transparent 32%),
-    linear-gradient(180deg, #102639, #081725 64%);
+    radial-gradient(circle at 10% 20%, rgba(255, 186, 118, 0.24), transparent 36%),
+    radial-gradient(circle at 86% 16%, rgba(85, 230, 218, 0.18), transparent 34%),
+    radial-gradient(circle at 48% 84%, rgba(255, 116, 120, 0.15), transparent 30%),
+    linear-gradient(160deg, #122f4a 0%, #0b2339 38%, #071a2e 78%, #061629 100%);
+  color: #f4fbff;
 }
 
 h1,
 h2 {
   font-family: var(--font-head);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at 50% 35%, black, transparent 82%);
 }
 
 #root {
