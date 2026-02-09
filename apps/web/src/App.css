@@ -1,0 +1,253 @@
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  gap: 1.5rem;
+  padding: 2rem 1rem 2.5rem;
+  width: min(980px, 100%);
+  margin: 0 auto;
+}
+
+.quiz-card {
+  background: linear-gradient(160deg, rgba(16, 39, 57, 0.94), rgba(7, 23, 35, 0.92));
+  border: 1px solid rgba(247, 217, 126, 0.28);
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: 0 18px 60px rgba(2, 6, 10, 0.45);
+  animation: rise-in 500ms ease-out;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #f9d992;
+  font-size: 0.78rem;
+}
+
+h1,
+h2 {
+  margin: 0.35rem 0 1rem;
+  color: #ffe8b1;
+}
+
+h1 {
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+}
+
+h2 {
+  margin-top: 1.2rem;
+  font-size: 1.05rem;
+}
+
+.player-wrap {
+  margin-bottom: 1rem;
+}
+
+.audio-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.volume-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #fdf8ea;
+  font-size: 0.95rem;
+}
+
+.volume-wrap input {
+  width: 170px;
+}
+
+.youtube-audio-frame,
+.native-audio-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.youtube-player {
+  width: 100%;
+  max-width: 760px;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 14px;
+  margin-top: 0.45rem;
+  background: #0d1620;
+}
+
+
+.answer-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex: 1 1 360px;
+  min-width: 240px;
+  border: 1px solid rgba(237, 222, 188, 0.4);
+  border-radius: 12px;
+  padding: 0.65rem 0.8rem;
+  font-size: 0.95rem;
+  background: rgba(245, 245, 245, 0.12);
+  color: #fdf8ea;
+}
+
+.answer-row > button {
+  flex: 0 0 auto;
+}
+
+.title-matches {
+  margin-top: 0.55rem;
+  margin-bottom: 0.75rem;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid rgba(226, 211, 174, 0.28);
+  border-radius: 12px;
+  background: rgba(9, 25, 37, 0.88);
+}
+
+.match-item {
+  width: 100%;
+  display: block;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid rgba(226, 211, 174, 0.14);
+  background: transparent;
+  color: #eaf3fb;
+  padding: 0.7rem 0.85rem;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.match-item:last-child {
+  border-bottom: 0;
+}
+
+.match-item:hover:enabled {
+  transform: none;
+  filter: none;
+  background: rgba(249, 217, 146, 0.14);
+}
+
+.match-item.selected {
+  background: rgba(121, 224, 181, 0.2);
+  color: #f2fffa;
+}
+
+.selector-help {
+  margin-top: 0;
+  margin-bottom: 0.8rem;
+  font-size: 0.85rem;
+}
+
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 0.7rem 1rem;
+  background: #f9d992;
+  color: #1f2e3a;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+button:hover:enabled {
+  transform: translateY(-1px);
+  filter: brightness(0.96);
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.7rem;
+}
+
+.option-button {
+  background: rgba(245, 245, 245, 0.12);
+  color: #fdf8ea;
+  border: 1px solid rgba(237, 222, 188, 0.2);
+  text-align: left;
+}
+
+.option-button.chosen {
+  border-color: #f9d992;
+}
+
+.option-button.correct {
+  background: rgba(95, 170, 118, 0.24);
+  border-color: rgba(107, 196, 133, 0.85);
+}
+
+.option-button.wrong {
+  background: rgba(198, 91, 91, 0.24);
+  border-color: rgba(213, 101, 101, 0.85);
+}
+
+.result {
+  margin: 1rem 0 0;
+  font-weight: 700;
+}
+
+.result.pass {
+  color: #95efb2;
+}
+
+.result.fail {
+  color: #ffafaf;
+}
+
+.error-message {
+  color: #ffafaf;
+  font-weight: 600;
+}
+
+.source-note {
+  color: #d7e7f4;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  background: rgba(9, 22, 33, 0.58);
+  border-radius: 14px;
+  border: 1px solid rgba(247, 217, 126, 0.16);
+  padding: 0.8rem 1rem;
+}
+
+.muted {
+  color: #bfd3df;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .quiz-card {
+    padding: 1.1rem;
+  }
+
+  .answer-row button {
+    width: 100%;
+  }
+}
