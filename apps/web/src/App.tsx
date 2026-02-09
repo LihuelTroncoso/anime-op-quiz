@@ -3,6 +3,7 @@ import type { QuizOption } from '@anime-op-quiz/shared'
 import './App.css'
 
 type RequestStatus = 'idle' | 'loading' | 'ready' | 'error'
+type RoundDurationSeconds = 5 | 10 | 20
 const OPENING_START_SECONDS = 50
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '/api'
 
@@ -12,6 +13,8 @@ type RoundPayload = {
   openingId: string
   audioUrl: string
   options: QuizOption[]
+  roundDurationSeconds: RoundDurationSeconds
+  roundEndsAt: number
 }
 
 type ScoreEntry = {
@@ -25,6 +28,8 @@ type ScoreEntry = {
 type RoomStateResponse = {
   round: RoundPayload | null
   hasAnswered: boolean
+  roundResolved: boolean
+  roundWinnerName: string | null
   canStartNextRound: boolean
   nextRoundOwnerName: string | null
   scoreboard: ScoreEntry[]
@@ -48,9 +53,12 @@ function App() {
   const [joinError, setJoinError] = useState<string | null>(null)
 
   const [round, setRound] = useState<RoundPayload | null>(null)
+  const [roundDurationSeconds, setRoundDurationSeconds] = useState<RoundDurationSeconds>(10)
   const [scoreboard, setScoreboard] = useState<ScoreEntry[]>([])
   const [answerInput, setAnswerInput] = useState('')
   const [hasAnswered, setHasAnswered] = useState(false)
+  const [roundResolved, setRoundResolved] = useState(true)
+  const [roundWinnerName, setRoundWinnerName] = useState<string | null>(null)
   const [canStartNextRound, setCanStartNextRound] = useState(false)
   const [nextRoundOwnerName, setNextRoundOwnerName] = useState<string | null>(null)
   const [isCorrectAnswer, setIsCorrectAnswer] = useState<boolean | null>(null)
@@ -61,6 +69,7 @@ function App() {
   const [youtubeReady, setYoutubeReady] = useState(false)
   const [nativePlaying, setNativePlaying] = useState(false)
   const [nativeVolume, setNativeVolume] = useState(10)
+  const [nowMs, setNowMs] = useState(() => Date.now())
 
   const youtubeFrameRef = useRef<HTMLIFrameElement | null>(null)
   const nativeAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -68,6 +77,8 @@ function App() {
   const isCorrect = useMemo(() => isCorrectAnswer, [isCorrectAnswer])
   const isJoined = Boolean(playerId)
   const isYouTubeRound = Boolean(round?.audioUrl.includes('youtube.com/embed/'))
+  const remainingRoundSeconds = round ? Math.max(0, Math.ceil((round.roundEndsAt - nowMs) / 1000)) : 0
+  const isRoundTimeUp = Boolean(round) && remainingRoundSeconds <= 0
   const allTitles = useMemo(() => (round ? round.options.map((option) => option.title) : []), [round])
 
   const matchingTitles = useMemo(() => {
@@ -111,7 +122,7 @@ function App() {
     return `https://www.youtube.com/embed/${youtubeVideoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1&start=${OPENING_START_SECONDS}`
   }, [youtubeVideoId])
 
-  const sendYouTubeCommand = (func: string, args: number[] = []) => {
+  const sendYouTubeCommand = (func: string, args: Array<number | boolean> = []) => {
     youtubeFrameRef.current?.contentWindow?.postMessage(
       JSON.stringify({
         event: 'command',
@@ -150,6 +161,8 @@ function App() {
 
   const applyRoomState = (state: RoomStateResponse) => {
     setScoreboard(state.scoreboard)
+    setRoundResolved(state.roundResolved)
+    setRoundWinnerName(state.roundWinnerName)
     setCanStartNextRound(state.canStartNextRound)
     setNextRoundOwnerName(state.nextRoundOwnerName)
 
@@ -214,7 +227,7 @@ function App() {
       const response = await fetch(apiUrl('/room/next-round'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId }),
+        body: JSON.stringify({ playerId, roundDurationSeconds }),
       })
 
       if (!response.ok) {
@@ -231,6 +244,10 @@ function App() {
   }
 
   const toggleYouTubePlayback = () => {
+    if (!round || roundResolved || isRoundTimeUp) {
+      return
+    }
+
     if (!youtubePlaying) {
       applyYouTubeVolume()
       sendYouTubeCommand('playVideo')
@@ -244,7 +261,7 @@ function App() {
 
   const toggleNativePlayback = async () => {
     const element = nativeAudioRef.current
-    if (!element) {
+    if (!element || !round || roundResolved || isRoundTimeUp) {
       return
     }
 
@@ -361,6 +378,8 @@ function App() {
       setScoreboard([])
       setPlayerId(null)
       setJoinedName('')
+      setRoundResolved(true)
+      setRoundWinnerName(null)
       setCanStartNextRound(false)
       setNextRoundOwnerName(null)
       setAnswerInput('')
@@ -395,6 +414,29 @@ function App() {
   }, [isYouTubeRound, nativeVolume, round?.audioUrl])
 
   useEffect(() => {
+    if (!round || roundResolved) {
+      return
+    }
+
+    const tick = setInterval(() => {
+      setNowMs(Date.now())
+    }, 1000)
+
+    return () => clearInterval(tick)
+  }, [round?.openingId, roundResolved])
+
+  useEffect(() => {
+    if (!isRoundTimeUp) {
+      return
+    }
+
+    nativeAudioRef.current?.pause()
+    sendYouTubeCommand('pauseVideo')
+    setNativePlaying(false)
+    setYoutubePlaying(false)
+  }, [isRoundTimeUp])
+
+  useEffect(() => {
     if (!playerId) {
       return
     }
@@ -403,7 +445,7 @@ function App() {
       void loadRoomState(playerId).catch(() => {
         // polling failures are non-blocking
       })
-    }, 3000)
+    }, 1000)
 
     return () => clearInterval(poll)
   }, [playerId, round?.openingId])
@@ -450,6 +492,19 @@ function App() {
             isYouTubeRound ? (
               <>
                 <div className="audio-controls">
+                  <label className="timer-wrap" htmlFor="round-duration-youtube">
+                    Round timer
+                    <select
+                      id="round-duration-youtube"
+                      value={String(roundDurationSeconds)}
+                      onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
+                      disabled={status === 'loading' || !canStartNextRound}
+                    >
+                      <option value="5">5s</option>
+                      <option value="10">10s</option>
+                      <option value="20">20s</option>
+                    </select>
+                  </label>
                   <button
                     type="button"
                     onClick={startNextRound}
@@ -457,11 +512,13 @@ function App() {
                   >
                     {status === 'loading' ? 'Loading...' : 'Next Opening'}
                   </button>
-                  {!hasAnswered ? (
-                    <button type="button" onClick={toggleYouTubePlayback} disabled={status !== 'ready'}>
-                      {youtubePlaying ? 'Pause' : 'Play'}
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    onClick={toggleYouTubePlayback}
+                    disabled={status !== 'ready' || roundResolved || isRoundTimeUp}
+                  >
+                    {youtubePlaying ? 'Pause' : 'Play'}
+                  </button>
                   {!hasAnswered ? (
                     <label className="volume-wrap" htmlFor="yt-volume">
                       Volume
@@ -477,7 +534,7 @@ function App() {
                     </label>
                   ) : null}
                 </div>
-                {!hasAnswered && youtubeAudioPlayerUrl && (
+                {!roundResolved && youtubeAudioPlayerUrl && (
                   <iframe
                     ref={youtubeFrameRef}
                     className="youtube-audio-frame"
@@ -492,6 +549,19 @@ function App() {
             ) : (
               <>
                 <div className="audio-controls">
+                  <label className="timer-wrap" htmlFor="round-duration-native">
+                    Round timer
+                    <select
+                      id="round-duration-native"
+                      value={String(roundDurationSeconds)}
+                      onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
+                      disabled={status === 'loading' || !canStartNextRound}
+                    >
+                      <option value="5">5s</option>
+                      <option value="10">10s</option>
+                      <option value="20">20s</option>
+                    </select>
+                  </label>
                   <button
                     type="button"
                     onClick={startNextRound}
@@ -499,7 +569,11 @@ function App() {
                   >
                     {status === 'loading' ? 'Loading...' : 'Next Opening'}
                   </button>
-                  <button type="button" onClick={() => void toggleNativePlayback()} disabled={status !== 'ready'}>
+                  <button
+                    type="button"
+                    onClick={() => void toggleNativePlayback()}
+                    disabled={status !== 'ready' || roundResolved || isRoundTimeUp}
+                  >
                     {nativePlaying ? 'Pause' : 'Play'}
                   </button>
                   <label className="volume-wrap" htmlFor="native-volume">
@@ -532,6 +606,19 @@ function App() {
             )
           ) : (
             <div className="audio-controls">
+              <label className="timer-wrap" htmlFor="round-duration-start">
+                Round timer
+                <select
+                  id="round-duration-start"
+                  value={String(roundDurationSeconds)}
+                  onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
+                  disabled={status === 'loading' || !canStartNextRound}
+                >
+                  <option value="5">5s</option>
+                  <option value="10">10s</option>
+                  <option value="20">20s</option>
+                </select>
+              </label>
               <button
                 type="button"
                 onClick={startNextRound}
@@ -544,6 +631,7 @@ function App() {
           {!canStartNextRound && nextRoundOwnerName && (
             <p className="muted selector-help">{nextRoundOwnerName} can start the next opening.</p>
           )}
+          {round && !roundResolved && <p className="muted selector-help">Time left: {remainingRoundSeconds}s</p>}
         </div>
 
         <h2>Answer</h2>
@@ -557,14 +645,17 @@ function App() {
               setValidationMessage(null)
             }}
             placeholder="Type your guess"
-            disabled={status !== 'ready' || hasAnswered || !round}
+            disabled={status !== 'ready' || hasAnswered || !round || roundResolved || isRoundTimeUp}
           />
-          <button onClick={submitAnswer} disabled={status !== 'ready' || hasAnswered || !round}>
+          <button
+            onClick={submitAnswer}
+            disabled={status !== 'ready' || hasAnswered || !round || roundResolved || isRoundTimeUp}
+          >
             Submit Answer
           </button>
         </div>
 
-        {round && !hasAnswered && (
+        {round && !hasAnswered && !roundResolved && !isRoundTimeUp && (
           <div className="title-matches" role="listbox" aria-label="Matching titles">
             {matchingTitles.map((title) => (
               <button
@@ -581,6 +672,16 @@ function App() {
             ))}
             {matchingTitles.length === 0 && <p className="muted selector-help">No matching titles in CSV cache.</p>}
           </div>
+        )}
+
+        {round && !roundResolved && isRoundTimeUp && <p className="muted selector-help">Time is up for this opening.</p>}
+
+        {round && roundResolved && (
+          <p className="muted selector-help">
+            {roundWinnerName
+              ? `${roundWinnerName} solved this opening and now chooses the next one.`
+              : 'No one solved this opening. Previous owner keeps the next pick.'}
+          </p>
         )}
 
         {hasAnswered && isYouTubeRound && youtubeRevealUrl && (

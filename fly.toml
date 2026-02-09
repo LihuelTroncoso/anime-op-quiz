@@ -6,7 +6,7 @@ primary_region = 'gru'
 [env]
   PLAYERS_SCORE_CSV = '/data/players-score.csv'
   PORT = '8080'
-  ROOM_IDLE_MINUTES = '20'
+  ROOM_IDLE_MINUTES = '5'
   YOUTUBE_CACHE_CSV = '/data/openings.csv'
 
 [[mounts]]

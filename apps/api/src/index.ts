@@ -4,12 +4,27 @@ import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { HttpError } from './domain/http-error'
 import { generateRound, markOpeningListened } from './services/openings-game'
-import { answerRound, beginRound, getRoomState, joinRoom, leaveRoom, markRoomActive, resetScores } from './services/room-store'
+import {
+  answerRound,
+  beginRound,
+  getRoomState,
+  joinRoom,
+  leaveRoom,
+  markRoomActive,
+  resetScores,
+} from './services/room-store'
 
 const app = new Hono()
 const configuredPort = Number(process.env.PORT)
 const serverPort = Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 8080
 const serverHost = '0.0.0.0'
+
+const logApi = (event: string, details: Record<string, string | number | boolean | null | undefined> = {}) => {
+  const serializedDetails = Object.entries(details)
+    .map(([key, value]) => `${key}=${value ?? 'null'}`)
+    .join(' ')
+  console.log(`[api] ${event}${serializedDetails ? ` ${serializedDetails}` : ''}`)
+}
 
 console.log(`[api] starting on ${serverHost}:${serverPort}`)
 const webDistPath = resolve(process.cwd(), 'apps/web/dist')
@@ -38,7 +53,10 @@ const contentTypeFor = (path: string) => {
 
 app.use('*', async (c, next) => {
   markRoomActive()
+  const startedAt = Date.now()
+  logApi('request.start', { method: c.req.method, path: c.req.path })
   await next()
+  logApi('request.end', { method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - startedAt })
 })
 
 app.get('/api/health', (c) => c.json({ ok: true }))
@@ -46,12 +64,16 @@ app.get('/api/health', (c) => c.json({ ok: true }))
 app.post('/api/room/join', async (c) => {
   try {
     const payload = (await c.req.json()) as { name?: string; password?: string }
+    logApi('room.join.attempt', { name: payload.name?.trim() ?? null })
     const data = await joinRoom(payload.name ?? '', payload.password)
+    logApi('room.join.success', { playerId: data.playerId, name: data.name })
     return c.json(data)
   } catch (error) {
     if (error instanceof HttpError) {
+      logApi('room.join.error', { status: error.status, message: error.message })
       return c.json({ error: error.message }, { status: error.status as 400 | 401 | 404 | 409 })
     }
+    console.error('[api] room.join.unexpected', error)
     return c.json({ error: 'Unable to join room' }, 500)
   }
 })
@@ -70,18 +92,26 @@ app.get('/api/room/state', async (c) => {
 
 app.post('/api/room/next-round', async (c) => {
   try {
-    const payload = (await c.req.json()) as { playerId?: string }
+    const payload = (await c.req.json()) as { playerId?: string; roundDurationSeconds?: number }
     if (!payload.playerId) {
       throw new HttpError(404, 'Player not found')
     }
 
     const round = await generateRound()
-    const response = await beginRound(payload.playerId, round)
+    const response = await beginRound(payload.playerId, round, payload.roundDurationSeconds)
+    logApi('room.next-round.success', {
+      playerId: payload.playerId,
+      roundDurationSeconds: payload.roundDurationSeconds ?? 10,
+      roundNumber: response.roundNumber,
+      openingId: response.round.openingId,
+    })
     return c.json(response)
   } catch (error) {
     if (error instanceof HttpError) {
+      logApi('room.next-round.error', { status: error.status, message: error.message })
       return c.json({ error: error.message }, { status: error.status as 400 | 401 | 404 | 409 })
     }
+    console.error('[api] room.next-round.unexpected', error)
     return c.json({ error: 'Unable to start next round' }, 500)
   }
 })
@@ -95,6 +125,11 @@ app.post('/api/room/answer', async (c) => {
 
     const result = await answerRound(payload.playerId, payload.answerTitle ?? '')
     await markOpeningListened(result.openingId)
+    logApi('room.answer.submitted', {
+      playerId: payload.playerId,
+      correct: result.correct,
+      openingId: result.openingId,
+    })
 
     return c.json({
       correct: result.correct,
@@ -103,8 +138,10 @@ app.post('/api/room/answer', async (c) => {
     })
   } catch (error) {
     if (error instanceof HttpError) {
+      logApi('room.answer.error', { status: error.status, message: error.message })
       return c.json({ error: error.message }, { status: error.status as 400 | 401 | 404 | 409 })
     }
+    console.error('[api] room.answer.unexpected', error)
     return c.json({ error: 'Unable to submit answer' }, 500)
   }
 })

@@ -59,6 +59,22 @@ h2 {
   font-size: 0.95rem;
 }
 
+.timer-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fdf8ea;
+  font-size: 0.9rem;
+}
+
+.timer-wrap select {
+  border: 1px solid rgba(237, 222, 188, 0.4);
+  border-radius: 10px;
+  padding: 0.35rem 0.55rem;
+  background: rgba(245, 245, 245, 0.12);
+  color: #fdf8ea;
+}
+
 .volume-wrap input {
   width: 170px;
 }

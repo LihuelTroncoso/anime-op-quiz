@@ -18,9 +18,14 @@ type RoomRound = {
   audioUrl: string
   options: QuizOption[]
   correctOpeningTitle: string
+  roundDurationSeconds: 5 | 10 | 20
+  roundStartedAt: number
+  participantPlayerIds: Set<string>
   answeredPlayerIds: Set<string>
   nextRoundWinnerPlayerId: string | null
 }
+
+const allowedRoundDurations = new Set([5, 10, 20])
 
 const roomPassword = process.env.ROOM_PASSWORD?.trim()
 const idleTimeoutMs = Number(process.env.ROOM_IDLE_MINUTES ?? '20') * 60 * 1000
@@ -53,6 +58,23 @@ const ensureNextRoundOwner = () => {
   const ownerPlayerId = pickRandom(playerIds)
   roomState.nextRoundOwnerPlayerId = ownerPlayerId
   return ownerPlayerId
+}
+
+const isRoundExpired = (round: RoomRound) => Date.now() >= round.roundStartedAt + round.roundDurationSeconds * 1000
+
+const isRoundResolved = (round: RoomRound) =>
+  Boolean(round.nextRoundWinnerPlayerId) || round.answeredPlayerIds.size >= round.participantPlayerIds.size || isRoundExpired(round)
+
+const resolveRoundDuration = (value?: number) => {
+  if (value === undefined) {
+    return 10 as 5 | 10 | 20
+  }
+
+  if (!allowedRoundDurations.has(value)) {
+    throw new HttpError(400, 'Round duration must be one of: 5, 10, 20 seconds')
+  }
+
+  return value as 5 | 10 | 20
 }
 
 let lastRequestAt = Date.now()
@@ -158,9 +180,11 @@ const upsertPlayer = async (player: Player) => {
 }
 
 const clearAllPlayers = async () => {
+  console.log('Clearing all players')
   roomState.players.clear()
   roomState.nextRoundOwnerPlayerId = null
   if (roomState.currentRound) {
+    roomState.currentRound.participantPlayerIds.clear()
     roomState.currentRound.answeredPlayerIds.clear()
     roomState.currentRound.nextRoundWinnerPlayerId = null
   }
@@ -215,6 +239,7 @@ export const joinRoom = async (name: string, password?: string) => {
   }
 
   roomState.players.set(playerId, player)
+  roomState.nextRoundOwnerPlayerId = playerId
   await upsertPlayer(player)
 
   return { roomId: ROOM_ID, playerId, name: player.name }
@@ -238,8 +263,13 @@ export const getRoomState = async (playerId?: string) => {
 
   const nextRoundOwnerPlayerId = ensureNextRoundOwner()
   const scoreboard = await getScoreboard()
+  const roundWinnerPlayerId = roomState.currentRound?.nextRoundWinnerPlayerId ?? null
+  const roundResolved = roomState.currentRound ? isRoundResolved(roomState.currentRound) : true
   const nextRoundOwnerName = nextRoundOwnerPlayerId
     ? (scoreboard.find((entry) => entry.playerId === nextRoundOwnerPlayerId)?.name ?? null)
+    : null
+  const roundWinnerName = roundWinnerPlayerId
+    ? (scoreboard.find((entry) => entry.playerId === roundWinnerPlayerId)?.name ?? null)
     : null
 
   return {
@@ -250,17 +280,32 @@ export const getRoomState = async (playerId?: string) => {
           openingId: roomState.currentRound.openingId,
           audioUrl: roomState.currentRound.audioUrl,
           options: roomState.currentRound.options,
+          roundDurationSeconds: roomState.currentRound.roundDurationSeconds,
+          roundEndsAt: roomState.currentRound.roundStartedAt + roomState.currentRound.roundDurationSeconds * 1000,
         }
       : null,
     hasAnswered:
       Boolean(playerId) && roomState.currentRound ? roomState.currentRound.answeredPlayerIds.has(playerId as string) : false,
-    canStartNextRound: Boolean(playerId) && playerId === nextRoundOwnerPlayerId,
+    roundResolved,
+    roundWinnerName,
+    canStartNextRound: Boolean(playerId) && playerId === nextRoundOwnerPlayerId && roundResolved,
     nextRoundOwnerName,
     scoreboard,
   }
 }
 
-export const beginRound = async (playerId: string, round: Omit<RoomRound, 'answeredPlayerIds' | 'nextRoundWinnerPlayerId'>) => {
+export const beginRound = async (
+  playerId: string,
+  round: Omit<
+    RoomRound,
+    | 'roundDurationSeconds'
+    | 'roundStartedAt'
+    | 'participantPlayerIds'
+    | 'answeredPlayerIds'
+    | 'nextRoundWinnerPlayerId'
+  >,
+  requestedRoundDurationSeconds?: number,
+) => {
   if (!(await resolvePlayer(playerId))) {
     throw new HttpError(404, 'Player not found')
   }
@@ -274,8 +319,22 @@ export const beginRound = async (playerId: string, round: Omit<RoomRound, 'answe
     throw new HttpError(409, 'Only the selected player can start the next opening')
   }
 
+  if (roomState.currentRound && !isRoundResolved(roomState.currentRound)) {
+    throw new HttpError(409, 'Current opening is still active')
+  }
+
+  const participantPlayerIds = new Set(roomState.players.keys())
+  if (participantPlayerIds.size === 0) {
+    throw new HttpError(409, 'No players available to start a round')
+  }
+
+  const roundDurationSeconds = resolveRoundDuration(requestedRoundDurationSeconds)
+
   roomState.currentRound = {
     ...round,
+    roundDurationSeconds,
+    roundStartedAt: Date.now(),
+    participantPlayerIds,
     answeredPlayerIds: new Set(),
     nextRoundWinnerPlayerId: null,
   }
@@ -303,6 +362,18 @@ export const answerRound = async (playerId: string, answerTitle: string) => {
 
   if (!roomState.currentRound) {
     throw new HttpError(400, 'No active round')
+  }
+
+  if (!roomState.currentRound.participantPlayerIds.has(playerId)) {
+    throw new HttpError(409, 'You joined after this opening started. Wait for the next one')
+  }
+
+  if (isRoundExpired(roomState.currentRound)) {
+    throw new HttpError(409, 'Time is up for this opening')
+  }
+
+  if (isRoundResolved(roomState.currentRound)) {
+    throw new HttpError(409, 'Opening already solved. Wait for the next one')
   }
 
   if (!answerTitle.trim()) {
@@ -374,6 +445,10 @@ export const leaveRoom = async (playerId: string) => {
 
   if (roomState.currentRound?.answeredPlayerIds.has(playerId)) {
     roomState.currentRound.answeredPlayerIds.delete(playerId)
+  }
+
+  if (roomState.currentRound?.participantPlayerIds.has(playerId)) {
+    roomState.currentRound.participantPlayerIds.delete(playerId)
   }
 
   if (roomState.currentRound?.nextRoundWinnerPlayerId === playerId) {
