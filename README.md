@@ -120,7 +120,6 @@ bun run build
 
 This generates:
 
-- Backend bundle: `apps/api/dist/server.js`
 - Frontend static files: `apps/web/dist`
 
 ## Deploy On Linux (Cloudflare Temporary Host)
@@ -178,3 +177,50 @@ Notes:
 
 - If backend tunnel URL changes, rebuild frontend with new `VITE_API_BASE_URL`.
 - For long-running deployment, use `systemd` or `pm2` for backend/frontend processes.
+
+## Deploy On Fly.io
+
+This repo is now configured so Fly runs a single process (`apps/api`) that serves:
+
+- API routes under `/api/*`
+- Built frontend from `apps/web/dist`
+
+### 1) Install Fly CLI and login
+
+```bash
+fly auth login
+```
+
+### 2) Create app + volume (first time only)
+
+```bash
+fly launch --no-deploy
+fly volumes create data --size 1 --region gru
+```
+
+`fly.toml` already mounts this volume at `/data` and stores CSV files there.
+
+### 3) Set required secrets
+
+```bash
+fly secrets set YOUTUBE_API_KEY="your_key" YOUTUBE_PLAYLIST_ID="your_playlist" ROOM_PASSWORD="your_room_password"
+```
+
+### 4) Deploy
+
+```bash
+fly deploy
+```
+
+### 5) Check health
+
+```bash
+fly logs
+curl https://<your-fly-app>.fly.dev/api/health
+```
+
+### Notes
+
+- Frontend and backend are served from the same Fly app/domain.
+- You do **not** need `VITE_API_BASE_URL` for Fly deploy (frontend uses same-origin `/api`).
+- If you change `fly.toml` mount name/region, recreate the volume accordingly.

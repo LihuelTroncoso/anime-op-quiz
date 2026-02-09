@@ -10,6 +10,9 @@
     "build": "bun run --cwd apps/api build && bun run --cwd apps/web build",
     "start": "concurrently -n api,web -c yellow,blue \"bun run --cwd apps/api start\" \"bun run --cwd apps/web start\""
   },
+  "dependencies": {
+    "hono": "^4.10.6"
+  },
   "devDependencies": {
     "concurrently": "^9.2.1"
   }

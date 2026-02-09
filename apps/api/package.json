@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "build": "bun build src/index.ts --target bun --outfile dist/server.js && bunx tsc --noEmit",
-    "start": "bun dist/server.js"
+    "build": "bunx tsc --noEmit",
+    "start": "bun src/index.ts"
   },
   "dependencies": {
     "@anime-op-quiz/shared": "workspace:*",
