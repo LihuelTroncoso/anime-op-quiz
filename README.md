@@ -1,116 +1,180 @@
 # Anime Opening Quiz
 
-Fullstack anime opening quiz built with Bun, React, TypeScript, Vite, and Hono.
+Multiplayer anime opening quiz built with Bun, React, TypeScript, Vite, and Hono.
 
-The frontend requests a random opening from the backend, plays audio from second 50, lets the user search/select a title from suggestions, and reveals the original YouTube video after answering.
+Current mode is a **single shared room** protected by a password from env. Players join, listen to the same opening, submit one answer per round, and see a live scoreboard.
 
-## Tech Stack
+## What It Does
 
-- Runtime/package manager: Bun
-- Frontend: React + TypeScript + Vite
-- Backend: Hono on Bun
-- Shared contracts: workspace TypeScript package
-
-## Project Structure
-
-```text
-.
-├── apps
-│   ├── api                # Bun + Hono backend
-│   └── web                # Vite + React frontend
-├── packages
-│   └── shared             # Shared TS interfaces
-└── package.json           # Workspace scripts
-```
-
-## Current Behavior
-
-- `GET /api/openings/random` returns one random round
-- Backend caches YouTube playlist metadata in CSV (instead of fetching all songs every request)
-- Quiz input is searchable and suggests matching titles from backend-provided CSV-derived list
-- Answer must match an exact CSV title (selected from suggestions)
-- YouTube audio starts at second `50`
-- After answer, original YouTube video is shown in a visible player
+- Uses YouTube playlist data cached to CSV (`id,tittle,videoId,animeTitle,listened`)
+- Filters songs by title containing `opening` or `op` (case-insensitive)
+- Starts playback from second `50`
+- Lets players join one room with a password
+- Tracks player scores in a CSV file (no database)
 
 ## API
 
-### `GET /api/health`
+### `POST /api/room/join`
+
+Request:
 
 ```json
-{ "ok": true }
+{ "name": "Lihuel", "password": "room-pass" }
 ```
 
-### `GET /api/openings/random`
+Response:
 
 ```json
-{
-  "openingId": "abc123",
-  "audioUrl": "https://www.youtube.com/embed/abc123",
-  "options": [
-    { "id": "abc123", "title": "Naruto OP 3" },
-    { "id": "def456", "title": "Bleach OP 2" }
-  ],
-  "correctOpeningTitle": "Naruto OP 3"
-}
+{ "roomId": "main-room", "playerId": "...", "name": "Lihuel" }
 ```
 
-### `POST /api/openings/:id/listened`
+### `GET /api/room/state?playerId=...`
 
-Marks a song as listened in the CSV cache.
+Returns current round (if any), player answered flag, and scoreboard.
+
+### `POST /api/room/next-round`
+
+Request:
 
 ```json
-{ "ok": true }
+{ "playerId": "..." }
 ```
 
-## Setup
+Starts a new shared round for the room.
 
-### 1) Install
+### `POST /api/room/answer`
 
-```bash
-bun install
+Request:
+
+```json
+{ "playerId": "...", "answerTitle": "Naruto Opening 3" }
 ```
 
-### 2) Configure env
+Response includes correctness and updated scoreboard.
+
+### `POST /api/room/reset-scores`
+
+Resets all players scores/correct/attempted to `0` in `players-score.csv`.
+
+### `POST /api/room/leave`
+
+Removes the player session from memory and deletes that player row from `players-score.csv`.
+
+## Env Setup
+
+Copy and fill:
 
 ```bash
 cp apps/api/.env.example apps/api/.env
 ```
 
-Fill `apps/api/.env`:
+Required:
 
-- `YOUTUBE_API_KEY` (YouTube Data API v3 key)
-- `YOUTUBE_PLAYLIST_ID` (playlist with anime openings)
-- `YOUTUBE_CACHE_CSV` (optional, default: `apps/api/data/openings.csv`)
+- `YOUTUBE_API_KEY`
+- `YOUTUBE_PLAYLIST_ID`
+- `ROOM_PASSWORD`
 
-### 3) Run
+Optional:
+
+- `YOUTUBE_CACHE_CSV` (default: `apps/api/data/openings.csv`)
+- `PLAYERS_SCORE_CSV` (default: `apps/api/data/players-score.csv`)
+- `ROOM_IDLE_MINUTES` (default: `20`)
+
+## Idle Cleanup
+
+If no request hits the backend for 20 minutes (or your `ROOM_IDLE_MINUTES` value), all players are removed from memory and `players-score.csv` is cleared.
+
+## CSV Files
+
+`openings.csv` fields:
+
+- `id`
+- `tittle`
+- `videoId`
+- `animeTitle`
+- `listened`
+
+`players-score.csv` fields:
+
+- `id`
+- `name`
+- `score`
+- `correct`
+- `attempted`
+
+## Run
 
 ```bash
+bun install
 bun run dev
 ```
 
 - API: `http://localhost:8787`
 - Web: `http://localhost:5173`
 
-### 4) Build
+## Build
 
 ```bash
 bun run build
 ```
 
-## CSV Cache Format
+This generates:
 
-On first successful YouTube fetch, backend writes CSV rows with:
+- Backend bundle: `apps/api/dist/server.js`
+- Frontend static files: `apps/web/dist`
 
-- `id`
-- `tittle`
-- `videoId`
-- `animeTitle`
-- `listened` (`false` by default, set to `true` after an answer)
+## Deploy On Linux (Cloudflare Temporary Host)
 
-Note: `tittle` is intentionally kept as the field name to match your requirement.
+This uses Cloudflare Quick Tunnels (`cloudflared tunnel --url ...`) with no domain setup.
 
-## Data Source Layer
+1) Install dependencies and build backend once
 
-- Source abstraction lives in `apps/api/src/opening-source.ts`
-- Mock fallback data lives in `apps/api/src/mock-openings.ts`
-- If YouTube config fails, backend falls back to mock data
+```bash
+bun install
+bun run --cwd apps/api build
+```
+
+2) Start backend (production)
+
+```bash
+bun run --cwd apps/api start
+```
+
+Backend runs on `127.0.0.1:8787`.
+
+3) Expose backend with Cloudflare and copy the public URL
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8787
+```
+
+Keep this terminal open, and copy the `https://...trycloudflare.com` URL.
+
+4) Build frontend with backend URL
+
+In another terminal, from repo root:
+
+```bash
+VITE_API_BASE_URL="https://YOUR-BACKEND-URL.trycloudflare.com/api" bun run --cwd apps/web build
+```
+
+5) Start frontend static server
+
+```bash
+bun run --cwd apps/web start
+```
+
+Frontend runs on `0.0.0.0:4173`.
+
+6) Expose frontend with Cloudflare
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:4173
+```
+
+Use this second `https://...trycloudflare.com` URL on your devices.
+
+Notes:
+
+- If backend tunnel URL changes, rebuild frontend with new `VITE_API_BASE_URL`.
+- For long-running deployment, use `systemd` or `pm2` for backend/frontend processes.

@@ -1,20 +1,7 @@
 import type { AnimeOpening } from '@anime-op-quiz/shared'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { mockOpenings } from './mock-openings'
-
-export interface OpeningSource {
-  getAllOpenings: () => Promise<AnimeOpening[]>
-  markAsListened: (openingId: string) => Promise<void>
-}
-
-export class MockOpeningSource implements OpeningSource {
-  async getAllOpenings() {
-    return mockOpenings
-  }
-
-  async markAsListened(_openingId: string) {}
-}
+import type { OpeningSource } from './opening-source'
 
 interface YouTubePlaylistItemsResponse {
   nextPageToken?: string
@@ -81,6 +68,23 @@ const parseCsvLine = (line: string) => {
   return fields
 }
 
+const deriveAnimeTitle = (videoTitle: string, fallbackChannel: string) => {
+  const separators = [' - ', ' | ', ' / ', ' — ']
+  for (const separator of separators) {
+    if (videoTitle.includes(separator)) {
+      return videoTitle.split(separator)[0].trim()
+    }
+  }
+
+  const opPattern = /^(.+?)\s+(OP|Opening)\s*\d*$/i
+  const opMatch = videoTitle.match(opPattern)
+  if (opMatch) {
+    return opMatch[1].trim()
+  }
+
+  return fallbackChannel
+}
+
 const rowsToOpenings = (rows: CachedOpeningRow[]) =>
   rows
     .filter((row) => hasOpeningKeyword(row.tittle))
@@ -89,7 +93,7 @@ const rowsToOpenings = (rows: CachedOpeningRow[]) =>
       animeTitle: row.animeTitle,
       openingTitle: row.tittle,
       audioUrl: `https://www.youtube.com/embed/${row.videoId}`,
-      listened: row.listened
+      listened: row.listened,
     }))
 
 const readCache = async () => {
@@ -142,23 +146,6 @@ const writeCache = async (rows: CachedOpeningRow[]) => {
   await writeFile(path, `${header}\n${body}\n`, 'utf-8')
 }
 
-const deriveAnimeTitle = (videoTitle: string, fallbackChannel: string) => {
-  const separators = [' - ', ' | ', ' / ', ' — ']
-  for (const separator of separators) {
-    if (videoTitle.includes(separator)) {
-      return videoTitle.split(separator)[0].trim()
-    }
-  }
-
-  const opPattern = /^(.+?)\s+(OP|Opening)\s*\d*$/i
-  const opMatch = videoTitle.match(opPattern)
-  if (opMatch) {
-    return opMatch[1].trim()
-  }
-
-  return fallbackChannel
-}
-
 export class YouTubeOpeningSource implements OpeningSource {
   private memoryCache: AnimeOpening[] | null = null
 
@@ -200,6 +187,7 @@ export class YouTubeOpeningSource implements OpeningSource {
 
     if (changed) {
       await writeCache(nextRows)
+      this.memoryCache = rowsToOpenings(nextRows)
     }
   }
 
@@ -222,7 +210,7 @@ export class YouTubeOpeningSource implements OpeningSource {
       const query = new URLSearchParams({
         part: 'snippet',
         maxResults: '50',
-        playlistId: playlistId,
+        playlistId,
         key: apiKey,
       })
 
@@ -269,38 +257,6 @@ export class YouTubeOpeningSource implements OpeningSource {
     }
 
     await writeCache(rows)
-
     return rowsToOpenings(rows)
   }
 }
-
-class FallbackOpeningSource implements OpeningSource {
-  constructor(
-    private readonly primarySource: OpeningSource,
-    private readonly fallbackSource: OpeningSource,
-  ) {}
-
-  async getAllOpenings() {
-    try {
-      return await this.primarySource.getAllOpenings()
-    } catch (error) {
-      console.warn('Falling back to mock openings source:', error)
-      return this.fallbackSource.getAllOpenings()
-    }
-  }
-
-  async markAsListened(openingId: string) {
-    try {
-      await this.primarySource.markAsListened(openingId)
-    } catch {
-      await this.fallbackSource.markAsListened(openingId)
-    }
-  }
-}
-
-const shouldUseYouTube = Boolean(readEnv('YOUTUBE_PLAYLIST_ID'))
-
-export const openingSource: OpeningSource = new FallbackOpeningSource(
-  shouldUseYouTube ? new YouTubeOpeningSource() : new MockOpeningSource(),
-  new MockOpeningSource(),
-)

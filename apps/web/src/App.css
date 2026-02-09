@@ -145,6 +145,13 @@ h2 {
   color: #f2fffa;
 }
 
+.score-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .selector-help {
   margin-top: 0;
   margin-bottom: 0.8rem;
@@ -170,6 +177,24 @@ button:hover:enabled {
 button:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+.button-warning {
+  background: #f3a847;
+  color: #1f2e3a;
+}
+
+.button-warning:hover:enabled {
+  filter: brightness(0.95);
+}
+
+.button-danger {
+  background: #e25555;
+  color: #fff2f2;
+}
+
+.button-danger:hover:enabled {
+  filter: brightness(0.93);
 }
 
 .options-grid {
