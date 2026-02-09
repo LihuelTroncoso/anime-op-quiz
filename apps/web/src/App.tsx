@@ -684,7 +684,7 @@ function App() {
           </p>
         )}
 
-        {hasAnswered && isYouTubeRound && youtubeRevealUrl && (
+        {roundResolved && isYouTubeRound && youtubeRevealUrl && (
           <iframe
             className="youtube-player"
             src={youtubeRevealUrl}
