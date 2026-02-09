@@ -21,4 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@v1
+      - name: Validate Fly API token
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN is empty. Add it in GitHub: Settings > Secrets and variables > Actions > New repository secret"
+            exit 1
+          fi
       - run: flyctl deploy --remote-only --config fly.toml --dockerfile Dockerfile --app anime-opening-quiz
