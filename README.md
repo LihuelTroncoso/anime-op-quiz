@@ -1,15 +1,15 @@
 # Anime Opening Quiz
 
-A fullstack anime opening quiz app built with Bun, React, TypeScript, Vite, and Hono.
+Fullstack anime opening quiz built with Bun, React, TypeScript, Vite, and Hono.
 
-The frontend asks the backend for a random anime opening, plays the audio clip, and shows all answer options from the backend dataset.
+The frontend requests a random opening from the backend, plays audio from second 50, lets the user search/select a title from suggestions, and reveals the original YouTube video after answering.
 
 ## Tech Stack
 
-- **Runtime / package manager:** Bun
-- **Frontend:** React + TypeScript + Vite
-- **Backend:** Hono (running on Bun)
-- **Shared contracts:** Workspace package with shared TypeScript types
+- Runtime/package manager: Bun
+- Frontend: React + TypeScript + Vite
+- Backend: Hono on Bun
+- Shared contracts: workspace TypeScript package
 
 ## Project Structure
 
@@ -19,123 +19,89 @@ The frontend asks the backend for a random anime opening, plays the audio clip, 
 │   ├── api                # Bun + Hono backend
 │   └── web                # Vite + React frontend
 ├── packages
-│   └── shared             # Shared TS interfaces used by web and api
-└── package.json           # Workspace and root scripts
+│   └── shared             # Shared TS interfaces
+└── package.json           # Workspace scripts
 ```
 
-## Features (Current MVP)
+## Current Behavior
 
-- Random anime opening endpoint: `GET /api/openings/random`
-- Audio player in the UI (`<audio controls>`)
-- Backend caches playlist metadata to CSV after first fetch
-- Client-side answer check (shows correct / incorrect)
-- Pluggable opening source interface on backend
+- `GET /api/openings/random` returns one random round
+- Backend caches YouTube playlist metadata in CSV (instead of fetching all songs every request)
+- Quiz input is searchable and suggests matching titles from backend-provided CSV-derived list
+- Answer must match an exact CSV title (selected from suggestions)
+- YouTube audio starts at second `50`
+- After answer, original YouTube video is shown in a visible player
 
 ## API
 
 ### `GET /api/health`
 
-Returns basic health status.
-
-Example response:
-
 ```json
-{
-  "ok": true
-}
+{ "ok": true }
 ```
 
 ### `GET /api/openings/random`
 
-Returns one random quiz round.
-
-Example response:
-
 ```json
 {
-  "openingId": "naruto-blue-bird",
-  "audioUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ",
-  "options": [{ "id": "id1", "title": "Naruto OP 3" }],
+  "openingId": "abc123",
+  "audioUrl": "https://www.youtube.com/embed/abc123",
+  "options": [
+    { "id": "abc123", "title": "Naruto OP 3" },
+    { "id": "def456", "title": "Bleach OP 2" }
+  ],
   "correctOpeningTitle": "Naruto OP 3"
 }
 ```
 
-## Getting Started
+## Setup
 
-### Prerequisites
-
-- [Bun](https://bun.sh/) installed
-
-### Install dependencies
+### 1) Install
 
 ```bash
 bun install
 ```
 
-### Configure YouTube credentials
-
-Create your local API env file from the example:
+### 2) Configure env
 
 ```bash
 cp apps/api/.env.example apps/api/.env
 ```
 
-Then fill `apps/api/.env` with your YouTube values:
+Fill `apps/api/.env`:
 
 - `YOUTUBE_API_KEY` (YouTube Data API v3 key)
-- `YOUTUBE_PLAYLIST_ID` (playlist containing anime openings)
-- `YOUTUBE_CACHE_CSV` (optional, defaults to `apps/api/data/openings.csv`)
+- `YOUTUBE_PLAYLIST_ID` (playlist with anime openings)
+- `YOUTUBE_CACHE_CSV` (optional, default: `apps/api/data/openings.csv`)
 
-If YouTube values are missing or invalid, the backend falls back to local mock openings.
-
-On first successful fetch, backend writes cached rows to CSV with headers:
-
-- `id`
-- `tittle`
-- `videoId`
-- `animeTitle` (extra helper field)
-
-### Run in development
+### 3) Run
 
 ```bash
 bun run dev
 ```
 
-This starts:
+- API: `http://localhost:8787`
+- Web: `http://localhost:5173`
 
-- API on `http://localhost:8787`
-- Web app on `http://localhost:5173`
-
-The frontend uses a Vite proxy for `/api` requests to the backend.
-
-### Build
+### 4) Build
 
 ```bash
 bun run build
 ```
 
-## Data Source Integration (Pluggable)
+## CSV Cache Format
 
-The backend supports YouTube and mock providers in:
+On first successful YouTube fetch, backend writes CSV rows with:
 
-- `apps/api/src/opening-source.ts`
-- `apps/api/src/mock-openings.ts`
+- `id`
+- `tittle`
+- `videoId`
+- `animeTitle`
 
-To connect a different source (database or another external API):
+Note: `tittle` is intentionally kept as the field name to match your requirement.
 
-1. Implement `OpeningSource` with your real fetch logic.
-2. Export your implementation as `openingSource`.
-3. Keep the same return shape (`AnimeOpening[]`) so the API contract remains stable.
+## Data Source Layer
 
-## Notes
-
-- The current MVP sends `correctAnimeTitle` to the frontend for quick iteration.
-- For production quiz integrity, add a server-side answer validation endpoint and avoid exposing the correct answer in the random round response.
-
-## Roadmap Ideas
-
-- Score system and round history
-- Timed mode / difficulty presets
-- User accounts and leaderboard
-- Persistent opening catalog in a database
-- Better audio licensing and source management
+- Source abstraction lives in `apps/api/src/opening-source.ts`
+- Mock fallback data lives in `apps/api/src/mock-openings.ts`
+- If YouTube config fails, backend falls back to mock data
