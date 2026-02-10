@@ -265,8 +265,13 @@ export const getRoomState = async (playerId?: string) => {
 
   const nextRoundOwnerPlayerId = ensureNextRoundOwner()
   const scoreboard = await getScoreboard()
-  const roundWinnerPlayerId = roomState.currentRound?.nextRoundWinnerPlayerId ?? null
-  const roundResolved = roomState.currentRound ? isRoundResolved(roomState.currentRound) : true
+  const currentRound = roomState.currentRound
+  const roundWinnerPlayerId = currentRound?.nextRoundWinnerPlayerId ?? null
+  const roundResolved = currentRound ? isRoundResolved(currentRound) : true
+  let canPlayRoundAudio = false
+  if (playerId && currentRound && !roundResolved) {
+    canPlayRoundAudio = currentRound.participantPlayerIds.has(playerId)
+  }
   const nextRoundOwnerName = nextRoundOwnerPlayerId
     ? (scoreboard.find((entry) => entry.playerId === nextRoundOwnerPlayerId)?.name ?? null)
     : null
@@ -277,18 +282,18 @@ export const getRoomState = async (playerId?: string) => {
   return {
     roomId: ROOM_ID,
     roundNumber: roomState.roundNumber,
-    round: roomState.currentRound
+    round: currentRound
       ? {
-          openingId: roomState.currentRound.openingId,
-          audioUrl: roomState.currentRound.audioUrl,
-          options: roomState.currentRound.options,
-          roundDurationSeconds: roomState.currentRound.roundDurationSeconds,
-          roundEndsAt: roomState.currentRound.roundStartedAt + roomState.currentRound.roundDurationSeconds * 1000,
+          openingId: currentRound.openingId,
+          audioUrl: currentRound.audioUrl,
+          options: currentRound.options,
+          roundDurationSeconds: currentRound.roundDurationSeconds,
+          roundEndsAt: currentRound.roundStartedAt + currentRound.roundDurationSeconds * 1000,
         }
       : null,
-    hasAnswered:
-      Boolean(playerId) && roomState.currentRound ? roomState.currentRound.answeredPlayerIds.has(playerId as string) : false,
+    hasAnswered: Boolean(playerId) && currentRound ? currentRound.answeredPlayerIds.has(playerId as string) : false,
     roundResolved,
+    canPlayRoundAudio,
     roundWinnerName,
     canStartNextRound: Boolean(playerId) && playerId === nextRoundOwnerPlayerId && roundResolved,
     nextRoundOwnerName,

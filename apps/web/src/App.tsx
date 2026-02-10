@@ -1,48 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { QuizOption } from '@anime-op-quiz/shared'
-import './App.css'
 
-type RequestStatus = 'idle' | 'loading' | 'ready' | 'error'
-type RoundDurationSeconds = 5 | 10 | 20
-const OPENING_START_SECONDS = 50
+import './App.css'
+import { AnswerSection } from './components/quiz/AnswerSection'
+import { JoinRoomCard } from './components/quiz/JoinRoomCard'
+import { RoundControls } from './components/quiz/RoundControls'
+import { RoundTimer } from './components/quiz/RoundTimer'
+import { ScoreboardSection } from './components/quiz/ScoreboardSection'
+import {
+  OPENING_START_SECONDS,
+  type RequestStatus,
+  type RoomStateResponse,
+  type RoundDurationSeconds,
+  type RoundPayload,
+  type ScoreEntry,
+} from './types/quiz'
+import { normalizeText } from './utils/text'
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '/api'
 
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
-
-type RoundPayload = {
-  openingId: string
-  audioUrl: string
-  options: QuizOption[]
-  roundDurationSeconds: RoundDurationSeconds
-  roundEndsAt: number
-}
-
-type ScoreEntry = {
-  playerId: string
-  name: string
-  score: number
-  correct: number
-  attempted: number
-}
-
-type RoomStateResponse = {
-  round: RoundPayload | null
-  hasAnswered: boolean
-  roundResolved: boolean
-  roundWinnerName: string | null
-  canStartNextRound: boolean
-  nextRoundOwnerName: string | null
-  scoreboard: ScoreEntry[]
-}
-
-const normalizeText = (value: string) =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
 
 function App() {
   const [status, setStatus] = useState<RequestStatus>('idle')
@@ -58,6 +34,7 @@ function App() {
   const [answerInput, setAnswerInput] = useState('')
   const [hasAnswered, setHasAnswered] = useState(false)
   const [roundResolved, setRoundResolved] = useState(true)
+  const [canPlayRoundAudio, setCanPlayRoundAudio] = useState(false)
   const [roundWinnerName, setRoundWinnerName] = useState<string | null>(null)
   const [canStartNextRound, setCanStartNextRound] = useState(false)
   const [nextRoundOwnerName, setNextRoundOwnerName] = useState<string | null>(null)
@@ -75,7 +52,6 @@ function App() {
   const youtubeFrameRef = useRef<HTMLIFrameElement | null>(null)
   const nativeAudioRef = useRef<HTMLAudioElement | null>(null)
 
-  const isCorrect = useMemo(() => isCorrectAnswer, [isCorrectAnswer])
   const isJoined = Boolean(playerId)
   const isYouTubeRound = Boolean(round?.audioUrl.includes('youtube.com/embed/'))
   const roundTotalSeconds = round?.roundDurationSeconds ?? roundDurationSeconds
@@ -158,21 +134,40 @@ function App() {
     setValidationMessage(null)
     setIsCorrectAnswer(null)
     setHasAnswered(false)
+    setCanPlayRoundAudio(false)
     setYoutubePlaying(false)
     setYoutubeReady(false)
     setNativePlaying(false)
     setPlayStartedAtMs(null)
   }
 
+  const resetSessionUi = () => {
+    resetRoundUi()
+    setRound(null)
+    setScoreboard([])
+    setPlayerId(null)
+    setJoinedName('')
+    setRoundResolved(true)
+    setRoundWinnerName(null)
+    setCanStartNextRound(false)
+    setNextRoundOwnerName(null)
+    setJoinPassword('')
+    setJoinError(null)
+    setStatus('idle')
+  }
+
   const applyRoomState = (state: RoomStateResponse) => {
     setScoreboard(state.scoreboard)
     setRoundResolved(state.roundResolved)
+    setCanPlayRoundAudio(state.canPlayRoundAudio)
     setRoundWinnerName(state.roundWinnerName)
     setCanStartNextRound(state.canStartNextRound)
     setNextRoundOwnerName(state.nextRoundOwnerName)
 
     if (!state.round) {
       setRound(null)
+      setHasAnswered(false)
+      setCanPlayRoundAudio(false)
       return
     }
 
@@ -249,7 +244,7 @@ function App() {
   }
 
   const toggleYouTubePlayback = () => {
-    if (!round || roundResolved || isRoundTimeUp) {
+    if (!round || !canPlayRoundAudio || roundResolved || isRoundTimeUp) {
       return
     }
 
@@ -267,7 +262,7 @@ function App() {
 
   const toggleNativePlayback = async () => {
     const element = nativeAudioRef.current
-    if (!element || !round || roundResolved || isRoundTimeUp) {
+    if (!element || !round || !canPlayRoundAudio || roundResolved || isRoundTimeUp) {
       return
     }
 
@@ -382,20 +377,7 @@ function App() {
         throw new Error(payload.error ?? 'Unable to leave session')
       }
 
-      setRound(null)
-      setScoreboard([])
-      setPlayerId(null)
-      setJoinedName('')
-      setRoundResolved(true)
-      setRoundWinnerName(null)
-      setCanStartNextRound(false)
-      setNextRoundOwnerName(null)
-      setAnswerInput('')
-      setValidationMessage(null)
-      setPlayStartedAtMs(null)
-      setStatus('idle')
-      setJoinPassword('')
-      setJoinError(null)
+      resetSessionUi()
     } catch (error) {
       setStatus('error')
       setValidationMessage(error instanceof Error ? error.message : 'Unable to leave session')
@@ -461,31 +443,15 @@ function App() {
 
   if (!isJoined) {
     return (
-      <main className="app-shell">
-        <section className="quiz-card room-card">
-          <p className="eyebrow">Anime Opening Quiz</p>
-          <h1>Join Main Room</h1>
-          <div className="answer-row">
-            <input
-              className="search-input"
-              placeholder="Your name"
-              value={joinName}
-              onChange={(event) => setJoinName(event.target.value)}
-            />
-            <input
-              className="search-input"
-              placeholder="Room password"
-              type="password"
-              value={joinPassword}
-              onChange={(event) => setJoinPassword(event.target.value)}
-            />
-            <button onClick={joinRoom} disabled={status === 'loading'}>
-              {status === 'loading' ? 'Joining...' : 'Join Room'}
-            </button>
-          </div>
-          {joinError && <p className="error-message">{joinError}</p>}
-        </section>
-      </main>
+      <JoinRoomCard
+        status={status}
+        joinName={joinName}
+        joinPassword={joinPassword}
+        joinError={joinError}
+        onJoinNameChange={setJoinName}
+        onJoinPasswordChange={setJoinPassword}
+        onJoinRoom={() => void joinRoom()}
+      />
     )
   }
 
@@ -497,256 +463,70 @@ function App() {
         <p className="muted selector-help">You are playing as `{joinedName}`</p>
 
         <div className="player-wrap">
-          {round ? (
-            isYouTubeRound ? (
-              <>
-                <div className="audio-controls">
-                  <label className="timer-wrap" htmlFor="round-duration-youtube">
-                    Round timer
-                    <select
-                      id="round-duration-youtube"
-                      value={String(roundDurationSeconds)}
-                      onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
-                      disabled={status === 'loading' || !canStartNextRound}
-                    >
-                      <option value="20">20s - Easy</option>
-                      <option value="10">10s - Medium</option>
-                      <option value="5">5s - Hard</option>
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={startNextRound}
-                    disabled={status === 'loading' || !canStartNextRound}
-                  >
-                    {status === 'loading' ? 'Loading...' : 'Next Opening'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={toggleYouTubePlayback}
-                    disabled={status !== 'ready' || roundResolved || isRoundTimeUp}
-                  >
-                    {youtubePlaying ? 'Pause' : 'Play'}
-                  </button>
-                  {!hasAnswered ? (
-                    <label className="volume-wrap" htmlFor="yt-volume">
-                      Volume
-                      <input
-                        id="yt-volume"
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={youtubeVolume}
-                        onChange={(event) => setYoutubeVolume(Number(event.target.value))}
-                        disabled={status !== 'ready'}
-                      />
-                    </label>
-                  ) : null}
-                </div>
-                {!roundResolved && youtubeAudioPlayerUrl && (
-                  <iframe
-                    ref={youtubeFrameRef}
-                    className="youtube-audio-frame"
-                    src={youtubeAudioPlayerUrl}
-                    title="Hidden YouTube audio player"
-                    allow="autoplay; encrypted-media"
-                    referrerPolicy="strict-origin-when-cross-origin"
-                    onLoad={() => setYoutubeReady(true)}
-                  />
-                )}
-              </>
-            ) : (
-              <>
-                <div className="audio-controls">
-                  <label className="timer-wrap" htmlFor="round-duration-native">
-                    Round timer
-                    <select
-                      id="round-duration-native"
-                      value={String(roundDurationSeconds)}
-                      onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
-                      disabled={status === 'loading' || !canStartNextRound}
-                    >
-                      <option value="20">20s - Easy</option>
-                      <option value="10">10s - Medium</option>
-                      <option value="5">5s - Hard</option>
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={startNextRound}
-                    disabled={status === 'loading' || !canStartNextRound}
-                  >
-                    {status === 'loading' ? 'Loading...' : 'Next Opening'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void toggleNativePlayback()}
-                    disabled={status !== 'ready' || roundResolved || isRoundTimeUp}
-                  >
-                    {nativePlaying ? 'Pause' : 'Play'}
-                  </button>
-                  <label className="volume-wrap" htmlFor="native-volume">
-                    Volume
-                    <input
-                      id="native-volume"
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={nativeVolume}
-                      onChange={(event) => setNativeVolume(Number(event.target.value))}
-                      disabled={status !== 'ready'}
-                    />
-                  </label>
-                </div>
-                <audio
-                  ref={nativeAudioRef}
-                  src={round.audioUrl}
-                  preload="none"
-                  className="native-audio-hidden"
-                  onLoadedMetadata={(event) => {
-                    const element = event.currentTarget
-                    element.currentTime = Math.min(OPENING_START_SECONDS, element.duration)
-                  }}
-                  onEnded={() => setNativePlaying(false)}
-                >
-                  Your browser does not support the audio element.
-                </audio>
-              </>
-            )
-          ) : (
-            <div className="audio-controls">
-              <label className="timer-wrap" htmlFor="round-duration-start">
-                Round timer
-                <select
-                  id="round-duration-start"
-                  value={String(roundDurationSeconds)}
-                  onChange={(event) => setRoundDurationSeconds(Number(event.target.value) as RoundDurationSeconds)}
-                  disabled={status === 'loading' || !canStartNextRound}
-                >
-                  <option value="20">20s - Easy</option>
-                  <option value="10">10s - Medium</option>
-                  <option value="5">5s - Hard</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={startNextRound}
-                disabled={status === 'loading' || !canStartNextRound}
-              >
-                {status === 'loading' ? 'Loading...' : 'Start First Opening'}
-              </button>
-            </div>
-          )}
-          {!canStartNextRound && nextRoundOwnerName && (
-            <p className="muted selector-help">{nextRoundOwnerName} can start the next opening.</p>
-          )}
-          {round && !roundResolved && (
-            <div className="round-timer" role="status" aria-live="polite">
-              <div className="round-timer-top">
-                <span>{playStartedAtMs === null ? 'Timer ready' : 'Time left'}</span>
-                <strong>{remainingRoundSeconds}s</strong>
-              </div>
-              <div className="round-timer-track" aria-hidden="true">
-                <span className="round-timer-fill" style={{ width: `${roundProgressPercent}%` }} />
-              </div>
-              {playStartedAtMs === null && (
-                <p className="muted selector-help">Press Play to begin your countdown.</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <h2>Answer</h2>
-        <div className="answer-row">
-          <input
-            className="search-input"
-            type="text"
-            value={answerInput}
-            onChange={(event) => {
-              setAnswerInput(event.target.value)
-              setValidationMessage(null)
-            }}
-            placeholder="Type your guess"
-            disabled={status !== 'ready' || hasAnswered || !round || roundResolved || isRoundTimeUp}
+          <RoundControls
+            status={status}
+            round={round}
+            canPlayRoundAudio={canPlayRoundAudio}
+            roundResolved={roundResolved}
+            canStartNextRound={canStartNextRound}
+            nextRoundOwnerName={nextRoundOwnerName}
+            roundDurationSeconds={roundDurationSeconds}
+            hasAnswered={hasAnswered}
+            isYouTubeRound={isYouTubeRound}
+            youtubeAudioPlayerUrl={youtubeAudioPlayerUrl}
+            youtubePlaying={youtubePlaying}
+            youtubeVolume={youtubeVolume}
+            nativePlaying={nativePlaying}
+            nativeVolume={nativeVolume}
+            onRoundDurationChange={setRoundDurationSeconds}
+            onStartNextRound={() => void startNextRound()}
+            onToggleYouTubePlayback={toggleYouTubePlayback}
+            onToggleNativePlayback={() => void toggleNativePlayback()}
+            onYoutubeVolumeChange={setYoutubeVolume}
+            onNativeVolumeChange={setNativeVolume}
+            onYouTubeReady={() => setYoutubeReady(true)}
+            onNativeEnded={() => setNativePlaying(false)}
+            youtubeFrameRef={youtubeFrameRef}
+            nativeAudioRef={nativeAudioRef}
           />
-          <button
-            onClick={submitAnswer}
-            disabled={status !== 'ready' || hasAnswered || !round || roundResolved || isRoundTimeUp}
-          >
-            Submit Answer
-          </button>
-        </div>
-
-        {round && !hasAnswered && !roundResolved && !isRoundTimeUp && (
-          <div className="title-matches matches-board" role="listbox" aria-label="Matching titles">
-            {matchingTitles.map((title) => (
-              <button
-                key={title}
-                type="button"
-                className={`match-item ${answerInput.trim() === title ? 'selected' : ''}`}
-                onClick={() => {
-                  setAnswerInput(title)
-                  setValidationMessage(null)
-                }}
-              >
-                {title}
-              </button>
-            ))}
-            {matchingTitles.length === 0 && <p className="muted selector-help">No matching titles in CSV cache.</p>}
-          </div>
-        )}
-
-        {round && !roundResolved && isRoundTimeUp && <p className="muted selector-help">Time is up for this opening.</p>}
-
-        {round && roundResolved && (
-          <p className="muted selector-help">
-            {roundWinnerName
-              ? `${roundWinnerName} solved this opening and now chooses the next one.`
-              : 'No one solved this opening. Previous owner keeps the next pick.'}
-          </p>
-        )}
-
-        {roundResolved && isYouTubeRound && youtubeRevealUrl && (
-          <iframe
-            className="youtube-player"
-            src={youtubeRevealUrl}
-            title="YouTube opening video"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            referrerPolicy="strict-origin-when-cross-origin"
-            allowFullScreen
+          <RoundTimer
+            isVisible={Boolean(round && !roundResolved)}
+            playStartedAtMs={playStartedAtMs}
+            remainingRoundSeconds={remainingRoundSeconds}
+            roundProgressPercent={roundProgressPercent}
           />
-        )}
-
-        {validationMessage && <p className="muted selector-help">{validationMessage}</p>}
-        {isCorrect !== null && (
-          <p className={`result ${isCorrect ? 'pass' : 'fail'}`}>
-            {isCorrect ? 'Correct! Nice ear.' : 'Wrong answer this round.'}
-          </p>
-        )}
-
-        <h2>Scoreboard</h2>
-        <div className="answer-row">
-          <button className="button-warning" onClick={resetScores} disabled={status === 'loading'}>
-            Reset Scores
-          </button>
-          <button className="button-danger" onClick={leaveSession} disabled={status === 'loading'}>
-            Leave Session
-          </button>
         </div>
-        <div className="title-matches scoreboard-board" role="table" aria-label="Scoreboard">
-          {scoreboard.map((entry, index) => (
-            <div key={entry.playerId} className="match-item score-row">
-              <span>
-                #{index + 1} {entry.name}
-              </span>
-              <span>{entry.score} pts</span>
-              <span>
-                {entry.correct}/{entry.attempted}
-              </span>
-            </div>
-          ))}
-          {scoreboard.length === 0 && <p className="muted selector-help">No players in room.</p>}
-        </div>
+
+        <AnswerSection
+          statusDisabled={status !== 'ready'}
+          round={round}
+          roundResolved={roundResolved}
+          hasAnswered={hasAnswered}
+          isRoundTimeUp={isRoundTimeUp}
+          answerInput={answerInput}
+          matchingTitles={matchingTitles}
+          roundWinnerName={roundWinnerName}
+          youtubeRevealUrl={youtubeRevealUrl}
+          isYouTubeRound={isYouTubeRound}
+          validationMessage={validationMessage}
+          isCorrectAnswer={isCorrectAnswer}
+          onAnswerInputChange={(value) => {
+            setAnswerInput(value)
+            setValidationMessage(null)
+          }}
+          onSubmitAnswer={() => void submitAnswer()}
+          onSelectTitle={(title) => {
+            setAnswerInput(title)
+            setValidationMessage(null)
+          }}
+        />
+
+        <ScoreboardSection
+          status={status}
+          scoreboard={scoreboard}
+          onResetScores={() => void resetScores()}
+          onLeaveSession={() => void leaveSession()}
+        />
       </section>
     </main>
   )
