@@ -1,273 +1,290 @@
-import type { AnimeOpening } from '@anime-op-quiz/shared'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
-import type { OpeningSource } from './opening-source'
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import type { AnimeOpening } from "@anime-op-quiz/shared";
+import type { OpeningSource } from "./opening-source";
 
 interface YouTubePlaylistItemsResponse {
-  nextPageToken?: string
-  items: YouTubePlaylistItem[]
+	nextPageToken?: string;
+	items: YouTubePlaylistItem[];
 }
 
 interface YouTubePlaylistItem {
-  snippet: {
-    title: string
-    videoOwnerChannelTitle?: string
-    resourceId?: {
-      videoId?: string
-    }
-  }
+	snippet: {
+		title: string;
+		videoOwnerChannelTitle?: string;
+		resourceId?: {
+			videoId?: string;
+		};
+	};
 }
 
 interface CachedOpeningRow {
-  id: string
-  tittle: string
-  videoId: string
-  animeTitle: string
-  listened: boolean
+	id: string;
+	tittle: string;
+	videoId: string;
+	animeTitle: string;
+	listened: boolean;
 }
 
-const readEnv = (key: string) => process.env[key]?.trim()
+const readEnv = (key: string) => process.env[key]?.trim();
 
 const csvPath = () =>
-  readEnv('YOUTUBE_CACHE_CSV')
-    ? resolve(readEnv('YOUTUBE_CACHE_CSV') as string)
-    : resolve(process.cwd(), 'data', 'openings.csv')
+	readEnv("YOUTUBE_CACHE_CSV")
+		? resolve(readEnv("YOUTUBE_CACHE_CSV") as string)
+		: resolve(process.cwd(), "data", "openings.csv");
 
-const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`
+const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
-const hasOpeningKeyword = (title: string) => /\b(opening|op)\b/i.test(title)
+const hasOpeningKeyword = (title: string) => /\b(opening|op)\b/i.test(title);
 
 const parseCsvLine = (line: string) => {
-  const fields: string[] = []
-  let current = ''
-  let inQuotes = false
+	const fields: string[] = [];
+	let current = "";
+	let inQuotes = false;
 
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i]
+	for (let i = 0; i < line.length; i += 1) {
+		const char = line[i];
 
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"'
-        i += 1
-      } else {
-        inQuotes = !inQuotes
-      }
-      continue
-    }
+		if (char === '"') {
+			if (inQuotes && line[i + 1] === '"') {
+				current += '"';
+				i += 1;
+			} else {
+				inQuotes = !inQuotes;
+			}
+			continue;
+		}
 
-    if (char === ',' && !inQuotes) {
-      fields.push(current)
-      current = ''
-      continue
-    }
+		if (char === "," && !inQuotes) {
+			fields.push(current);
+			current = "";
+			continue;
+		}
 
-    current += char
-  }
+		current += char;
+	}
 
-  fields.push(current)
-  return fields
-}
+	fields.push(current);
+	return fields;
+};
 
 const deriveAnimeTitle = (videoTitle: string, fallbackChannel: string) => {
-  const separators = [' - ', ' | ', ' / ', ' — ']
-  for (const separator of separators) {
-    if (videoTitle.includes(separator)) {
-      return videoTitle.split(separator)[0].trim()
-    }
-  }
+	const separators = [" - ", " | ", " / ", " — "];
+	for (const separator of separators) {
+		if (videoTitle.includes(separator)) {
+			return videoTitle.split(separator)[0].trim();
+		}
+	}
 
-  const opPattern = /^(.+?)\s+(OP|Opening)\s*\d*$/i
-  const opMatch = videoTitle.match(opPattern)
-  if (opMatch) {
-    return opMatch[1].trim()
-  }
+	const opPattern = /^(.+?)\s+(OP|Opening)\s*\d*$/i;
+	const opMatch = videoTitle.match(opPattern);
+	if (opMatch) {
+		return opMatch[1].trim();
+	}
 
-  return fallbackChannel
-}
+	return fallbackChannel;
+};
 
 const rowsToOpenings = (rows: CachedOpeningRow[]) =>
-  rows
-    .filter((row) => hasOpeningKeyword(row.tittle))
-    .map((row) => ({
-      id: row.id,
-      animeTitle: row.animeTitle,
-      openingTitle: row.tittle,
-      audioUrl: `https://www.youtube.com/embed/${row.videoId}`,
-      listened: row.listened,
-    }))
+	rows
+		.filter((row) => hasOpeningKeyword(row.tittle))
+		.map((row) => ({
+			id: row.id,
+			animeTitle: row.animeTitle,
+			openingTitle: row.tittle,
+			audioUrl: `https://www.youtube.com/embed/${row.videoId}`,
+			listened: row.listened,
+		}));
 
 const readCache = async () => {
-  const path = csvPath()
-  const content = await readFile(path, 'utf-8')
-  const lines = content
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
+	const path = csvPath();
+	const content = await readFile(path, "utf-8");
+	const lines = content
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
 
-  if (lines.length <= 1) {
-    return []
-  }
+	if (lines.length <= 1) {
+		return [];
+	}
 
-  const headers = parseCsvLine(lines[0])
-  const idIndex = headers.indexOf('id')
-  const tittleIndex = headers.indexOf('tittle')
-  const videoIdIndex = headers.indexOf('videoId')
-  const animeTitleIndex = headers.indexOf('animeTitle')
-  const listenedIndex = headers.indexOf('listened')
+	const headers = parseCsvLine(lines[0]);
+	const idIndex = headers.indexOf("id");
+	const tittleIndex = headers.indexOf("tittle");
+	const videoIdIndex = headers.indexOf("videoId");
+	const animeTitleIndex = headers.indexOf("animeTitle");
+	const listenedIndex = headers.indexOf("listened");
 
-  if (idIndex < 0 || tittleIndex < 0 || videoIdIndex < 0) {
-    throw new Error('Invalid CSV header. Expected id,tittle,videoId.')
-  }
+	if (idIndex < 0 || tittleIndex < 0 || videoIdIndex < 0) {
+		throw new Error("Invalid CSV header. Expected id,tittle,videoId.");
+	}
 
-  return lines.slice(1).map((line) => {
-    const values = parseCsvLine(line)
-    return {
-      id: values[idIndex] ?? '',
-      tittle: values[tittleIndex] ?? '',
-      videoId: values[videoIdIndex] ?? '',
-      animeTitle:
-        animeTitleIndex >= 0 && values[animeTitleIndex]
-          ? values[animeTitleIndex]
-          : deriveAnimeTitle(values[tittleIndex] ?? '', 'Unknown Channel'),
-      listened: listenedIndex >= 0 ? values[listenedIndex]?.toLowerCase() === 'true' : false,
-    }
-  })
-}
+	return lines.slice(1).map((line) => {
+		const values = parseCsvLine(line);
+		return {
+			id: values[idIndex] ?? "",
+			tittle: values[tittleIndex] ?? "",
+			videoId: values[videoIdIndex] ?? "",
+			animeTitle:
+				animeTitleIndex >= 0 && values[animeTitleIndex]
+					? values[animeTitleIndex]
+					: deriveAnimeTitle(values[tittleIndex] ?? "", "Unknown Channel"),
+			listened:
+				listenedIndex >= 0
+					? values[listenedIndex]?.toLowerCase() === "true"
+					: false,
+		};
+	});
+};
 
 const writeCache = async (rows: CachedOpeningRow[]) => {
-  const path = csvPath()
-  await mkdir(dirname(path), { recursive: true })
+	const path = csvPath();
+	await mkdir(dirname(path), { recursive: true });
 
-  const header = ['id', 'tittle', 'videoId', 'animeTitle', 'listened'].join(',')
-  const body = rows
-    .map((row) => [row.id, row.tittle, row.videoId, row.animeTitle, String(row.listened)].map(csvEscape).join(','))
-    .join('\n')
+	const header = ["id", "tittle", "videoId", "animeTitle", "listened"].join(
+		",",
+	);
+	const body = rows
+		.map((row) =>
+			[row.id, row.tittle, row.videoId, row.animeTitle, String(row.listened)]
+				.map(csvEscape)
+				.join(","),
+		)
+		.join("\n");
 
-  await writeFile(path, `${header}\n${body}\n`, 'utf-8')
-}
+	await writeFile(path, `${header}\n${body}\n`, "utf-8");
+};
 
 export class YouTubeOpeningSource implements OpeningSource {
-  private memoryCache: AnimeOpening[] | null = null
+	private memoryCache: AnimeOpening[] | null = null;
 
-  async getAllOpenings() {
-    if (this.memoryCache) {
-      return this.memoryCache
-    }
+	async getAllOpenings() {
+		if (this.memoryCache) {
+			return this.memoryCache;
+		}
 
-    try {
-      const cachedRows = await readCache()
-      if (cachedRows.length > 0) {
-        this.memoryCache = rowsToOpenings(cachedRows)
-        return this.memoryCache
-      }
-    } catch {
-      // Cache not present yet or malformed: we'll rebuild it from YouTube.
-    }
+		try {
+			const cachedRows = await readCache();
+			if (cachedRows.length > 0) {
+				this.memoryCache = rowsToOpenings(cachedRows);
+				return this.memoryCache;
+			}
+		} catch {
+			// Cache not present yet or malformed: we'll rebuild it from YouTube.
+		}
 
-    const fetched = await this.fetchAndCacheOpenings()
-    this.memoryCache = fetched
-    return fetched
-  }
+		const fetched = await this.fetchAndCacheOpenings();
+		this.memoryCache = fetched;
+		return fetched;
+	}
 
-  async markAsListened(openingId: string) {
-    const rows = await readCache()
-    if (rows.length === 0) {
-      return
-    }
+	async markAsListened(openingId: string) {
+		const rows = await readCache();
+		if (rows.length === 0) {
+			return;
+		}
 
-    let changed = false
-    const nextRows = rows.map((row) => {
-      if (row.id !== openingId || row.listened) {
-        return row
-      }
+		let changed = false;
+		const nextRows = rows.map((row) => {
+			if (row.id !== openingId || row.listened) {
+				return row;
+			}
 
-      changed = true
-      return { ...row, listened: true }
-    })
+			changed = true;
+			return { ...row, listened: true };
+		});
 
-    if (changed) {
-      await writeCache(nextRows)
-      this.memoryCache = rowsToOpenings(nextRows)
-    }
-  }
+		if (changed) {
+			await writeCache(nextRows);
+			this.memoryCache = rowsToOpenings(nextRows);
+		}
+	}
 
-  async resetAllAsUnlistened() {
-    const rows = await readCache()
-    if (rows.length === 0) {
-      return
-    }
+	async resetAllAsUnlistened() {
+		const rows = await readCache();
+		if (rows.length === 0) {
+			return;
+		}
 
-    const nextRows = rows.map((row) => ({ ...row, listened: false }))
-    await writeCache(nextRows)
-    this.memoryCache = rowsToOpenings(nextRows)
-  }
+		const nextRows = rows.map((row) => ({ ...row, listened: false }));
+		await writeCache(nextRows);
+		this.memoryCache = rowsToOpenings(nextRows);
+	}
 
-  private async fetchAndCacheOpenings() {
-    const playlistId = readEnv('YOUTUBE_PLAYLIST_ID')
-    const apiKey = readEnv('YOUTUBE_API_KEY')
+	private async fetchAndCacheOpenings() {
+		const playlistId = readEnv("YOUTUBE_PLAYLIST_ID");
+		const apiKey = readEnv("YOUTUBE_API_KEY");
 
-    if (!playlistId) {
-      throw new Error('Missing YOUTUBE_PLAYLIST_ID.')
-    }
+		if (!playlistId) {
+			throw new Error("Missing YOUTUBE_PLAYLIST_ID.");
+		}
 
-    if (!apiKey) {
-      throw new Error('Missing YOUTUBE_API_KEY.')
-    }
+		if (!apiKey) {
+			throw new Error("Missing YOUTUBE_API_KEY.");
+		}
 
-    const collectedItems: YouTubePlaylistItem[] = []
-    let nextPageToken: string | undefined
+		const collectedItems: YouTubePlaylistItem[] = [];
+		let nextPageToken: string | undefined;
 
-    do {
-      const query = new URLSearchParams({
-        part: 'snippet',
-        maxResults: '50',
-        playlistId,
-        key: apiKey,
-      })
+		do {
+			const query = new URLSearchParams({
+				part: "snippet",
+				maxResults: "50",
+				playlistId,
+				key: apiKey,
+			});
 
-      if (nextPageToken) {
-        query.set('pageToken', nextPageToken)
-      }
+			if (nextPageToken) {
+				query.set("pageToken", nextPageToken);
+			}
 
-      const response = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${query.toString()}`)
+			const response = await fetch(
+				`https://www.googleapis.com/youtube/v3/playlistItems?${query.toString()}`,
+			);
 
-      if (!response.ok) {
-        const body = await response.text()
-        throw new Error(`YouTube playlist request failed (${response.status}): ${body}`)
-      }
+			if (!response.ok) {
+				const body = await response.text();
+				throw new Error(
+					`YouTube playlist request failed (${response.status}): ${body}`,
+				);
+			}
 
-      const payload = (await response.json()) as YouTubePlaylistItemsResponse
-      collectedItems.push(...payload.items)
-      nextPageToken = payload.nextPageToken
-    } while (nextPageToken)
+			const payload = (await response.json()) as YouTubePlaylistItemsResponse;
+			collectedItems.push(...payload.items);
+			nextPageToken = payload.nextPageToken;
+		} while (nextPageToken);
 
-    const rows: CachedOpeningRow[] = collectedItems
-      .map((item) => item.snippet)
-      .filter((snippet) => snippet.title !== 'Deleted video' && snippet.title !== 'Private video')
-      .filter((snippet) => hasOpeningKeyword(snippet.title))
-      .map((snippet) => {
-        const videoId = snippet.resourceId?.videoId
-        if (!videoId) {
-          return null
-        }
+		const rows: CachedOpeningRow[] = collectedItems
+			.map((item) => item.snippet)
+			.filter(
+				(snippet) =>
+					snippet.title !== "Deleted video" &&
+					snippet.title !== "Private video",
+			)
+			.filter((snippet) => hasOpeningKeyword(snippet.title))
+			.map((snippet) => {
+				const videoId = snippet.resourceId?.videoId;
+				if (!videoId) {
+					return null;
+				}
 
-        const channel = snippet.videoOwnerChannelTitle ?? 'Unknown Channel'
+				const channel = snippet.videoOwnerChannelTitle ?? "Unknown Channel";
 
-        return {
-          id: videoId,
-          tittle: snippet.title,
-          videoId,
-          animeTitle: deriveAnimeTitle(snippet.title, channel),
-          listened: false,
-        }
-      })
-      .filter((row): row is CachedOpeningRow => row !== null)
+				return {
+					id: videoId,
+					tittle: snippet.title,
+					videoId,
+					animeTitle: deriveAnimeTitle(snippet.title, channel),
+					listened: false,
+				};
+			})
+			.filter((row): row is CachedOpeningRow => row !== null);
 
-    if (rows.length === 0) {
-      throw new Error('YouTube playlist has no playable items.')
-    }
+		if (rows.length === 0) {
+			throw new Error("YouTube playlist has no playable items.");
+		}
 
-    await writeCache(rows)
-    return rowsToOpenings(rows)
-  }
+		await writeCache(rows);
+		return rowsToOpenings(rows);
+	}
 }
