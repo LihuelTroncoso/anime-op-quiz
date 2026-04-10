@@ -468,7 +468,7 @@ function App() {
 		}
 
 		nativeAudioRef.current.volume = nativeVolume / 100;
-	}, [isYouTubeRound, nativeVolume, round?.audioUrl]);
+	}, [isYouTubeRound, nativeVolume]);
 
 	useEffect(() => {
 		if (!round || roundResolved || playStartedAtMs === null) {
@@ -480,7 +480,7 @@ function App() {
 		}, 1000);
 
 		return () => clearInterval(tick);
-	}, [round?.openingId, roundResolved, playStartedAtMs]);
+	}, [round?.openingId, roundResolved, playStartedAtMs, round]);
 
 	useEffect(() => {
 		if (!isRoundTimeUp) {
@@ -527,7 +527,7 @@ function App() {
 							value={joinPassword}
 							onChange={(event) => setJoinPassword(event.target.value)}
 						/>
-						<button onClick={joinRoom} disabled={status === "loading"}>
+						<button type="submit" onClick={joinRoom} disabled={status === "loading"}>
 							{status === "loading" ? "Joining..." : "Join Room"}
 						</button>
 					</div>
@@ -759,6 +759,7 @@ function App() {
 						}
 					/>
 					<button
+						type="submit"
 						onClick={submitAnswer}
 						disabled={
 							status !== "ready" ||
@@ -834,6 +835,7 @@ function App() {
 				<h2>Scoreboard</h2>
 				<div className="answer-row">
 					<button
+						type="submit"
 						className="button-warning"
 						onClick={resetScores}
 						disabled={status === "loading"}
@@ -841,6 +843,7 @@ function App() {
 						Reset Scores
 					</button>
 					<button
+						type="submit"
 						className="button-danger"
 						onClick={leaveSession}
 						disabled={status === "loading"}

@@ -100,7 +100,11 @@ app.post("/api/room/join", async (c) => {
 
 app.get("/api/room/state", async (c) => {
 	try {
-		const data = await getRoomState(c.req.query("playerId"));
+		const playerIdParam = c.req.query("playerId");
+		const playerId =
+			playerIdParam !== undefined ? Number(playerIdParam) : undefined;
+
+		const data = await getRoomState(playerId);
 		return c.json(data);
 	} catch (error) {
 		if (error instanceof HttpError) {
@@ -116,7 +120,7 @@ app.get("/api/room/state", async (c) => {
 app.post("/api/room/next-round", async (c) => {
 	try {
 		const payload = (await c.req.json()) as {
-			playerId?: string;
+			playerId?: number;
 			roundDurationSeconds?: number;
 		};
 		if (!payload.playerId) {
@@ -155,7 +159,7 @@ app.post("/api/room/next-round", async (c) => {
 app.post("/api/room/answer", async (c) => {
 	try {
 		const payload = (await c.req.json()) as {
-			playerId?: string;
+			playerId?: number;
 			answerTitle?: string;
 		};
 		if (!payload.playerId) {
@@ -176,7 +180,7 @@ app.post("/api/room/answer", async (c) => {
 		return c.json({
 			correct: result.correct,
 			correctOpeningTitle: result.correctOpeningTitle,
-			scoreboard: result.scoreboard,
+			// scoreboard: result.scoreboard,
 		});
 	} catch (error) {
 		if (error instanceof HttpError) {
@@ -196,13 +200,13 @@ app.post("/api/room/answer", async (c) => {
 
 app.post("/api/room/reset-scores", async (c) => {
 	try {
-		const payload = (await c.req.json()) as { playerId?: string };
+		const payload = (await c.req.json()) as { playerId?: number };
 		if (!payload.playerId) {
 			throw new HttpError(404, "Player not found");
 		}
 
-		const scoreboard = await resetScores(payload.playerId);
-		return c.json({ ok: true, scoreboard });
+		/* const scoreboard = */ await resetScores(payload.playerId);
+		return c.json({ ok: true /*scoreboard*/ });
 	} catch (error) {
 		if (error instanceof HttpError) {
 			return c.json(
@@ -216,7 +220,7 @@ app.post("/api/room/reset-scores", async (c) => {
 
 app.post("/api/room/leave", async (c) => {
 	try {
-		const payload = (await c.req.json()) as { playerId?: string };
+		const payload = (await c.req.json()) as { playerId?: number };
 		if (!payload.playerId) {
 			throw new HttpError(404, "Player not found");
 		}
