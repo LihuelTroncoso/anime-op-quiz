@@ -31,6 +31,12 @@ export default class HistoryUserDao {
 		});
 	}
 
+	async resetScores(): Promise<void> {
+		await prisma.historyUser.updateMany({
+			data: { score: 0 },
+		});
+	}
+
 	async findUser(id: number) {
 		return await prisma.historyUser.findUnique({ where: { id } });
 	}

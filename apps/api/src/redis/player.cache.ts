@@ -4,49 +4,82 @@ import { redis } from "./redis.client";
 export type Player = User & {
   correct: number;
 };
+export default class PlayerCache {
+  storePlayer(player: Player) {
+    const { id, ...fields } = player;
+    redis.sadd("playersIds", id.toString());
+    return redis.hset(`player:${id}`, fields);
+  }
 
-export async function storePlayer(player: Player) {
-  return redis.setex(player.name, -2, player.score.toString());
-}
+  async updatePlayerScore(player: Player) {
+    return redis.hincrby(`player:${player.id}`, "score", 1);
+  }
 
-export async function updatePlayerScore(player: Player) {
-  redis.get(player.name).then((score) => {
-    redis.getset(player.name, (score ? score + 1 : 0).toString());
-  });
-}
+  async playerExists(id: number) {
+    return redis.hkeys(`player:${id}`);
+  }
 
-export async function playerExists(id: number) {
-  return redis.get(id.toString());
-}
+  async playersIsEmpty() {
+    return (await redis.hlen("players")) === 0;
+  }
 
-export async function playersIsEmpty() {
-  return (await redis.llen("namesById")) === 0;
-}
+  async totalPlayers() {
+    return redis.hkeys("players").then((keys) => new Set(keys.map(Number)));
+  }
 
-export async function totalPlayers() {
-  return redis.hkeys("namesById").then((keys) => new Set(keys.map(Number)));
-}
+  async pickRandomPlayer() {
+    return Number(await redis.srandmember("playersIds"));
+  }
 
-export async function pickRandomPlayer() {
-  return redis.llen("namesById");
-}
+  async clearPlayers() {
+    await redis.send("FLUSHDB", []);
+  }
 
-export async function clearPlayers() {
-  await redis.send("FLUSHDB", []);
-}
+  async findPlayer(id: number) {
+    const values = await redis.hgetall(`player:${id}`);
 
-export async function findUser(id: number) {
-  return redis.get(id.toString());
-}
+    if (Object.keys(values).length === 0) {
+      return null;
+    }
 
-export async function deletePlayer(playerId: number) {
-  return redis.del(playerId.toString());
-}
+    return {
+      id,
+      name: values.name,
+      score: Number(values.score ?? 0),
+      correct: Number(values.correct ?? 0),
+      attempted: Number(values.attempted ?? 0),
+    };
+  }
 
-export async function resetAllScores() {
-  // TODO:
-}
+  async deletePlayer(playerId: number) {
+    return redis.del(`player:${playerId}`);
+  }
 
-export async function findUserName(id: number) {
-  return redis.get(id.toString());
+  async resetAllScores() {
+    let cursor = "0";
+
+    do {
+      const [nextCursor, playerIds] = (await redis.send("SSCAN", [
+        "playersIds",
+        cursor,
+        "COUNT",
+        "100",
+      ])) as [string, string[]];
+
+      cursor = nextCursor;
+
+      await Promise.all(
+        playerIds.map((playerId) =>
+          redis.hset(`player:${playerId}`, {
+            score: 0,
+            correct: 0,
+          }),
+        ),
+      );
+    } while (cursor !== "0");
+  }
+
+  async findPlayerName(id: number) {
+    return redis.get(id.toString());
+  }
 }

@@ -2,19 +2,8 @@ import { resolve } from "node:path";
 import type { QuizOption } from "@anime-op-quiz/shared";
 import HistoryUserDao from "../dao/history.users.dao";
 import { HttpError } from "../domain/http-error";
-import {
-  clearPlayers,
-  deletePlayer,
-  findUser,
-  findUserName,
-  pickRandomPlayer,
-  playerExists,
-  playersIsEmpty,
-  resetAllScores,
-  storePlayer,
-  totalPlayers,
-} from "../redis/player.cache";
 import { resetAllOpeningsAsUnlistened } from "./openings-game";
+import PlayerCache from "../redis/player.cache";
 
 export const ROOM_ID = "main-room";
 
@@ -39,6 +28,7 @@ type RoomRound = {
 };
 
 const userDao = new HistoryUserDao();
+const playerCache = new PlayerCache();
 const allowedRoundDurations = new Set([5, 10, 20]);
 
 const roomPassword = process.env.ROOM_PASSWORD?.trim();
@@ -57,17 +47,17 @@ const roomState: {
 const ensureNextRoundOwner = async () => {
   if (
     roomState.nextRoundOwnerPlayerId &&
-    (await playerExists(roomState.nextRoundOwnerPlayerId)) !== null
+    (await playerCache.playerExists(roomState.nextRoundOwnerPlayerId)) !== null
   ) {
     return roomState.nextRoundOwnerPlayerId;
   }
 
-  if (await playersIsEmpty()) {
+  if (await playerCache.playersIsEmpty()) {
     roomState.nextRoundOwnerPlayerId = null;
     return null;
   }
 
-  const ownerPlayerId = await pickRandomPlayer();
+  const ownerPlayerId = await playerCache.pickRandomPlayer();
   roomState.nextRoundOwnerPlayerId = ownerPlayerId;
   return ownerPlayerId;
 };
@@ -179,7 +169,7 @@ const clearAllPlayers = async () => {
     roomState.currentRound.answeredPlayerIds.clear();
     roomState.currentRound.nextRoundWinnerPlayerId = null;
   }
-  await clearPlayers();
+  await playerCache.clearPlayers();
   await resetAllOpeningsAsUnlistened();
   // await writePlayers([]);
 };
@@ -200,7 +190,7 @@ export const markRoomActive = () => {
 
 const resolvePlayer = async (playerId: number) => {
   // TODO: Revisar findUser
-  const active = findUser(playerId);
+  const active = await playerCache.findPlayer(playerId);
   if (active) {
     return active;
   }
@@ -214,7 +204,7 @@ const resolvePlayer = async (playerId: number) => {
         attempted: 0,
       };
       // TODO: revisar storePlayer
-      storePlayer(player);
+      playerCache.storePlayer(player);
       return player;
     } else {
       throw new HttpError(500, `User does not exists ${playerId}`);
@@ -274,10 +264,10 @@ export const getRoomState = async (playerId?: number) => {
     ? isRoundResolved(roomState.currentRound)
     : true;
   const nextRoundOwnerName = nextRoundOwnerPlayerId
-    ? (findUserName(nextRoundOwnerPlayerId) ?? null)
+    ? (playerCache.findPlayerName(nextRoundOwnerPlayerId) ?? null)
     : null;
   const roundWinnerName = roundWinnerPlayerId
-    ? (findUserName(roundWinnerPlayerId) ?? null)
+    ? (playerCache.findPlayerName(roundWinnerPlayerId) ?? null)
     : null;
 
   return {
@@ -339,7 +329,7 @@ export const beginRound = async (
     throw new HttpError(409, "Current opening is still active");
   }
 
-  const participantPlayerIds = await totalPlayers();
+  const participantPlayerIds = await playerCache.totalPlayers();
   if (participantPlayerIds.size === 0) {
     throw new HttpError(409, "No players available to start a round");
   }
@@ -410,18 +400,18 @@ export const answerRound = async (playerId: number, answerTitle: string) => {
       500,
       "Unexpected error when trying to update user score",
     );
-  } else {
-    const isCorrect =
-      answerTitle.trim() === roomState.currentRound.correctOpeningTitle;
-    if (isCorrect) {
-      player.correct += 1;
-      player.score += 1;
-      if (!roomState.currentRound.nextRoundWinnerPlayerId) {
-        roomState.currentRound.nextRoundWinnerPlayerId = playerId;
-        roomState.nextRoundOwnerPlayerId = playerId;
-      }
+  }
+  const isCorrect =
+    answerTitle.trim() === roomState.currentRound.correctOpeningTitle;
+  if (isCorrect) {
+    player.correct += 1;
+    player.score += 1;
+    if (!roomState.currentRound.nextRoundWinnerPlayerId) {
+      roomState.currentRound.nextRoundWinnerPlayerId = playerId;
+      roomState.nextRoundOwnerPlayerId = playerId;
     }
   }
+
   await userDao.updateUserScore(player.id, player.score);
   roomState.currentRound.answeredPlayerIds.add(playerId);
 
@@ -447,7 +437,7 @@ export const resetScores = async (playerId: number) => {
   //   }));
   //   // await writePlayers(resetPlayers);
   //
-  resetAllScores();
+  await Promise.all([userDao.resetScores(), playerCache.resetAllScores()]);
   // return await getScoreboard();
 };
 
@@ -456,7 +446,7 @@ export const leaveRoom = async (playerId: number) => {
     throw new HttpError(404, "Player not found");
   }
 
-  deletePlayer(playerId);
+  playerCache.deletePlayer(playerId);
 
   // const persistedPlayers = await readPlayers();
   // const nextPlayers = persistedPlayers.filter(
