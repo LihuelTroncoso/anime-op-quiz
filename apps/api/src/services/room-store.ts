@@ -87,7 +87,12 @@ const resolveRoundDuration = (value?: number) => {
 let lastRequestAt = Date.now();
 
 const createPlayer = async (name: string) => {
-  const user = await userDao.createUser(name);
+  let user = null;
+  try {
+    user = await userDao.createUser(name);
+  } catch (_ex) {
+    user = await userDao.findUserByName(name);
+  }
 
   if (user) {
     const player = { ...user, correct: 0, attempted: 0 };
@@ -178,6 +183,7 @@ export const getScoreboard = async () => {
       b.correct - a.correct ||
       a.name.localeCompare(b.name),
   );
+  console.log("llego");
   return players;
 };
 
@@ -190,6 +196,7 @@ export const getRoomState = async (playerId?: number) => {
   const scoreboard = await getScoreboard();
   const roundWinnerPlayerId =
     roomState.currentRound?.nextRoundWinnerPlayerId ?? null;
+  console.log("llego");
   const roundResolved = roomState.currentRound
     ? isRoundResolved(roomState.currentRound)
     : true;

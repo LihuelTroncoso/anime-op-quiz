@@ -21,11 +21,13 @@ export default class PlayerCache {
   }
 
   async playersIsEmpty() {
-    return (await redis.hlen("players")) === 0;
+    return (await redis.smembers("playersIds")).length !== 0;
   }
 
   async totalPlayers() {
-    return redis.hkeys("players").then((keys) => new Set(keys.map(Number)));
+    return redis
+      .smembers("playersIds")
+      .then((keys) => new Set(keys.map(Number)));
   }
 
   async pickRandomPlayer() {
@@ -88,18 +90,6 @@ export default class PlayerCache {
   }
 
   async getAllIds() {
-    let cursor = "0";
-    const allIds = [];
-    do {
-      const [nextCursor, playerIds] = await redis.sscan(
-        "playersIds",
-        cursor,
-        "COUNT",
-        "100",
-      );
-      cursor = nextCursor;
-      allIds.push(playerIds);
-    } while (cursor !== "0");
-    return allIds;
+    return redis.smembers("playersIds");
   }
 }
