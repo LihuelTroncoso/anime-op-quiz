@@ -1,9 +1,8 @@
-import { resolve } from "node:path";
 import type { QuizOption } from "@anime-op-quiz/shared";
 import HistoryUserDao from "../dao/history.users.dao";
 import { HttpError } from "../domain/http-error";
-import { resetAllOpeningsAsUnlistened } from "./openings-game";
 import PlayerCache from "../redis/player.cache";
+import { resetAllOpeningsAsUnlistened } from "./openings-game";
 
 export const ROOM_ID = "main-room";
 
@@ -87,76 +86,13 @@ const resolveRoundDuration = (value?: number) => {
 
 let lastRequestAt = Date.now();
 
-const playersCsvPath = () =>
-  process.env.PLAYERS_SCORE_CSV?.trim()
-    ? resolve(process.env.PLAYERS_SCORE_CSV.trim())
-    : resolve(process.cwd(), "data", "players-score.csv");
-
-const csvEscape = (value: string) => `"${value.replace(/"/g, '""')}"`;
-
-// const parseCsvLine = (line: string) => {
-// 	const fields: string[] = [];
-// 	let current = "";
-// 	let inQuotes = false;
-
-// 	for (let i = 0; i < line.length; i += 1) {
-// 		const char = line[i];
-
-// 		if (char === '"') {
-// 			if (inQuotes && line[i + 1] === '"') {
-// 				current += '"';
-// 				i += 1;
-// 			} else {
-// 				inQuotes = !inQuotes;
-// 			}
-// 			continue;
-// 		}
-
-// 		if (char === "," && !inQuotes) {
-// 			fields.push(current);
-// 			current = "";
-// 			continue;
-// 		}
-
-// 		current += char;
-// 	}
-
-// 	fields.push(current);
-// 	return fields;
-// };
-
-const readPlayers = async () => {
-  return await userDao.getUsers();
-};
-//
-// const writePlayers = async (players: Player[]) => {
-//   const filePath = playersCsvPath();
-//   await mkdir(dirname(filePath), { recursive: true });
-//
-//   const header = ["id", "name", "score", "correct", "attempted"].join(",");
-//   const body = players
-//     .map((player) =>
-//       [
-//         player.id.toString(),
-//         player.name,
-//         String(player.score),
-//         String(player.correct),
-//         String(player.attempted),
-//       ]
-//         .map(csvEscape)
-//         .join(","),
-//     )
-//     .join("\n");
-//
-//   await writeFile(filePath, `${header}\n${body}\n`, "utf-8");
-// };
-
 const createPlayer = async (name: string) => {
   const user = await userDao.createUser(name);
 
-  const players = await readPlayers();
-  const player = { ...user, correct: 0, attempted: 0 };
-  // players.push(player);
+  if (user) {
+    const player = { ...user, correct: 0, attempted: 0 };
+    playerCache.storePlayer(player);
+  }
 
   return user;
 };
@@ -234,22 +170,16 @@ export const joinRoom = async (name: string, password?: string) => {
   }
 };
 
-// TODO: Pasar el scoreboard a redis
-// export const getScoreboard = async () =>
-// 	(roomState.players)
-// 		.map((player) => ({
-// 			playerId: player.id,
-// 			name: player.name,
-// 			score: player.score,
-// 			correct: player.correct,
-// 			attempted: player.attempted,
-// 		}))
-// 		.sort(
-// 			(a, b) =>
-// 				b.score - a.score ||
-// 				b.correct - a.correct ||
-// 				a.name.localeCompare(b.name),
-// 		);
+export const getScoreboard = async () => {
+  const players = await playerCache.getAllPlayers();
+  players.sort(
+    (a, b) =>
+      b.score - a.score ||
+      b.correct - a.correct ||
+      a.name.localeCompare(b.name),
+  );
+  return players;
+};
 
 export const getRoomState = async (playerId?: number) => {
   if (playerId && !(await resolvePlayer(playerId))) {
@@ -257,7 +187,7 @@ export const getRoomState = async (playerId?: number) => {
   }
 
   const nextRoundOwnerPlayerId = await ensureNextRoundOwner();
-  //const scoreboard = await getScoreboard();
+  const scoreboard = await getScoreboard();
   const roundWinnerPlayerId =
     roomState.currentRound?.nextRoundWinnerPlayerId ?? null;
   const roundResolved = roomState.currentRound
@@ -293,7 +223,7 @@ export const getRoomState = async (playerId?: number) => {
     canStartNextRound:
       Boolean(playerId) && playerId === nextRoundOwnerPlayerId && roundResolved,
     nextRoundOwnerName,
-    // scoreboard,
+    scoreboard,
   };
 };
 
@@ -419,7 +349,7 @@ export const answerRound = async (playerId: number, answerTitle: string) => {
     correct: isCorrect,
     correctOpeningTitle: roomState.currentRound.correctOpeningTitle,
     openingId: roomState.currentRound.openingId,
-    // scoreboard: await getScoreboard(),
+    scoreboard: await getScoreboard(),
   };
 };
 
@@ -438,7 +368,7 @@ export const resetScores = async (playerId: number) => {
   //   // await writePlayers(resetPlayers);
   //
   await Promise.all([userDao.resetScores(), playerCache.resetAllScores()]);
-  // return await getScoreboard();
+  return await getScoreboard();
 };
 
 export const leaveRoom = async (playerId: number) => {

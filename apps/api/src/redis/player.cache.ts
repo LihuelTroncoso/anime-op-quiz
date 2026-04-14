@@ -3,6 +3,7 @@ import { redis } from "./redis.client";
 
 export type Player = User & {
   correct: number;
+  attempted: number;
 };
 export default class PlayerCache {
   storePlayer(player: Player) {
@@ -56,30 +57,49 @@ export default class PlayerCache {
   }
 
   async resetAllScores() {
-    let cursor = "0";
+    const playerIds = await this.getAllIds();
+    await Promise.all(
+      playerIds.map((playerId) =>
+        redis.hset(`player:${playerId}`, {
+          score: 0,
+          correct: 0,
+        }),
+      ),
+    );
+  }
 
-    do {
-      const [nextCursor, playerIds] = (await redis.send("SSCAN", [
-        "playersIds",
-        cursor,
-        "COUNT",
-        "100",
-      ])) as [string, string[]];
-
-      cursor = nextCursor;
-
-      await Promise.all(
-        playerIds.map((playerId) =>
-          redis.hset(`player:${playerId}`, {
-            score: 0,
-            correct: 0,
-          }),
-        ),
-      );
-    } while (cursor !== "0");
+  async getAllPlayers() {
+    const playerIds = await this.getAllIds();
+    return Promise.all(
+      playerIds.map(async (id) => {
+        const values = await redis.hgetall(`player${id}`);
+        return {
+          name: values.name,
+          score: Number(values.score ?? 0),
+          correct: Number(values.correct ?? 0),
+          attempted: Number(values.attempted ?? 0),
+        };
+      }),
+    );
   }
 
   async findPlayerName(id: number) {
     return redis.get(id.toString());
+  }
+
+  async getAllIds() {
+    let cursor = "0";
+    const allIds = [];
+    do {
+      const [nextCursor, playerIds] = await redis.sscan(
+        "playersIds",
+        cursor,
+        "COUNT",
+        "100",
+      );
+      cursor = nextCursor;
+      allIds.push(playerIds);
+    } while (cursor !== "0");
+    return allIds;
   }
 }
