@@ -11,3 +11,5 @@ apps/api/data/*.csv
 /src/generated/prisma
 /prisma/migrations/
 dev.db
+
+Session.vim
