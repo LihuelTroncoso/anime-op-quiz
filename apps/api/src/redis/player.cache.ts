@@ -13,7 +13,11 @@ export default class PlayerCache {
   }
 
   async updatePlayerScore(player: Player) {
-    return redis.hincrby(`player:${player.id}`, "score", 1);
+    redis.hset(`player:${player.id}`, {
+      score: player.score,
+      correct: player.correct,
+      attempted: player.attempted,
+    });
   }
 
   async playerExists(id: number) {
@@ -74,8 +78,10 @@ export default class PlayerCache {
     const playerIds = await this.getAllIds();
     return Promise.all(
       playerIds.map(async (id) => {
-        const values = await redis.hgetall(`player${id}`);
+        const values = await redis.hgetall(`player:${id}`);
+        console.log(values);
         return {
+          playerId: id,
           name: values.name,
           score: Number(values.score ?? 0),
           correct: Number(values.correct ?? 0),

@@ -112,7 +112,6 @@ const clearAllPlayers = async () => {
   }
   await playerCache.clearPlayers();
   await resetAllOpeningsAsUnlistened();
-  // await writePlayers([]);
 };
 
 setInterval(() => {
@@ -130,7 +129,6 @@ export const markRoomActive = () => {
 };
 
 const resolvePlayer = async (playerId: number) => {
-  // TODO: Revisar findUser
   const active = await playerCache.findPlayer(playerId);
   if (active) {
     return active;
@@ -144,7 +142,6 @@ const resolvePlayer = async (playerId: number) => {
         correct: 0,
         attempted: 0,
       };
-      // TODO: revisar storePlayer
       playerCache.storePlayer(player);
       return player;
     } else {
@@ -177,13 +174,14 @@ export const joinRoom = async (name: string, password?: string) => {
 
 export const getScoreboard = async () => {
   const players = await playerCache.getAllPlayers();
+  console.log(players);
   players.sort(
     (a, b) =>
       b.score - a.score ||
       b.correct - a.correct ||
       a.name.localeCompare(b.name),
   );
-  console.log("llego");
+  console.log(players);
   return players;
 };
 
@@ -196,15 +194,14 @@ export const getRoomState = async (playerId?: number) => {
   const scoreboard = await getScoreboard();
   const roundWinnerPlayerId =
     roomState.currentRound?.nextRoundWinnerPlayerId ?? null;
-  console.log("llego");
   const roundResolved = roomState.currentRound
     ? isRoundResolved(roomState.currentRound)
     : true;
   const nextRoundOwnerName = nextRoundOwnerPlayerId
-    ? (playerCache.findPlayerName(nextRoundOwnerPlayerId) ?? null)
+    ? ((await playerCache.findPlayerName(nextRoundOwnerPlayerId)) ?? null)
     : null;
   const roundWinnerName = roundWinnerPlayerId
-    ? (playerCache.findPlayerName(roundWinnerPlayerId) ?? null)
+    ? ((await playerCache.findPlayerName(roundWinnerPlayerId)) ?? null)
     : null;
 
   return {
@@ -340,6 +337,7 @@ export const answerRound = async (playerId: number, answerTitle: string) => {
   }
   const isCorrect =
     answerTitle.trim() === roomState.currentRound.correctOpeningTitle;
+  player.attempted += 1;
   if (isCorrect) {
     player.correct += 1;
     player.score += 1;
@@ -350,6 +348,7 @@ export const answerRound = async (playerId: number, answerTitle: string) => {
   }
 
   await userDao.updateUserScore(player.id, player.score);
+  await playerCache.updatePlayerScore(player);
   roomState.currentRound.answeredPlayerIds.add(playerId);
 
   return {
@@ -364,16 +363,6 @@ export const resetScores = async (playerId: number) => {
   if (!(await resolvePlayer(playerId))) {
     throw new HttpError(404, "Player not found");
   }
-  //
-  // const persistedPlayers = await readPlayers();
-  //   const resetPlayers = persistedPlayers.map((player) => ({
-  //     ...player,
-  //     score: 0,
-  //     correct: 0,
-  //     attempted: 0,
-  //   }));
-  //   // await writePlayers(resetPlayers);
-  //
   await Promise.all([userDao.resetScores(), playerCache.resetAllScores()]);
   return await getScoreboard();
 };
@@ -384,12 +373,6 @@ export const leaveRoom = async (playerId: number) => {
   }
 
   playerCache.deletePlayer(playerId);
-
-  // const persistedPlayers = await readPlayers();
-  // const nextPlayers = persistedPlayers.filter(
-  // 	(player) => player.id !== playerId,
-  // );
-  // await writePlayers(nextPlayers);
 
   if (roomState.currentRound?.answeredPlayerIds.has(playerId)) {
     roomState.currentRound.answeredPlayerIds.delete(playerId);
