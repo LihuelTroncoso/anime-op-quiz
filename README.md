@@ -224,3 +224,7 @@ curl https://<your-fly-app>.fly.dev/api/health
 - Frontend and backend are served from the same Fly app/domain.
 - You do **not** need `VITE_API_BASE_URL` for Fly deploy (frontend uses same-origin `/api`).
 - If you change `fly.toml` mount name/region, recreate the volume accordingly.
+
+## Troubleshooting
+
+- If Bun fails with `Cannot find module '@prisma/client-runtime-utils'`, install it explicitly with `bun add @prisma/client-runtime-utils@7.6.0` and regenerate Prisma with `bunx --bun prisma generate`.

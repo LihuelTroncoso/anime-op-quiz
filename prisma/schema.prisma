@@ -16,5 +16,5 @@ datasource db {
 model HistoryUser {
   id Int @id @default(autoincrement())
   name String @unique
-  points Int @default(0)
+  score Int @default(0)
 }
